@@ -1,0 +1,13 @@
+﻿NO CARD — IMAP path (instead of Azure Graph)
+
+1. On the Security page: turn ON "Two-step verification" (required).
+2. After it is ON, open: https://account.live.com/proofs/AppPassword
+   Create an app password.
+3. Tell me (or paste into server/local.env):
+   OUTLOOK_IMAP_USER=the-email-that-gets-greenhouse-codes@hotmail.com
+   OUTLOOK_IMAP_PASS=the-app-password-you-created
+4. I will start: npm run mail:bridge
+
+For MULTIPLE emails: repeat app password for each Microsoft mailbox, OR forward other inboxes into one connected mailbox.
+
+Azure Graph needs a card for free-account verify — skip it until you can use a card later.

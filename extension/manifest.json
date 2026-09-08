@@ -1,0 +1,103 @@
+{
+  "manifest_version": 3,
+  "name": "Lumi",
+  "version": "1.9.40",
+
+  "description": "Autofill selects like a human: open → see options → match → click.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "notifications",
+    "clipboardWrite",
+    "debugger",
+    "management"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:9017/*",
+    "http://127.0.0.1:9017/*",
+    "http://localhost:8001/*",
+    "http://127.0.0.1:8001/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "http://localhost:3000/*",
+      "http://127.0.0.1:3000/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lumi",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "bid-select-jd": {
+      "suggested_key": {
+        "default": "Alt+Shift+J",
+        "mac": "Alt+Shift+J"
+      },
+      "description": "Pick JD block on the page (or highlight text)"
+    },
+    "bid-generate": {
+      "suggested_key": {
+        "default": "Alt+Shift+G",
+        "mac": "Alt+Shift+G"
+      },
+      "description": "Use selected/picked JD → open Generate + auto CV"
+    },
+    "bid-select-questions": {
+      "suggested_key": {
+        "default": "Alt+Shift+Q",
+        "mac": "Alt+Shift+Q"
+      },
+      "description": "Select which application questions to answer"
+    },
+    "bid-fill": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Fill profile first; Answer questions on Generate; then fill AI answers"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": ["content/controlMatch.js", "content/scrape.js", "content/fill.js", "content/bidderFill.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": ["content/app-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

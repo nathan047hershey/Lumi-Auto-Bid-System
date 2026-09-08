@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Flexential Greenhouse select fixture</title>
+<style>
+  body { font-family: system-ui; max-width: 640px; margin: 24px auto; }
+  .field { margin: 20px 0; }
+  label.q { display: block; font-weight: 600; margin-bottom: 8px; }
+  .select-shell { position: relative; }
+  .select__control {
+    border: 1px solid #ccc; border-radius: 6px; padding: 10px 12px;
+    display: flex; align-items: center; min-height: 42px;
+  }
+  .select__value-container--has-value { flex: 1; }
+  .select__single-value { color: #111; }
+  .select__input { border: 0; outline: none; width: 2px; opacity: 0; }
+  input[type="tel"] { width: 100%; max-width: 420px; padding: 8px; }
+</style>
+</head>
+<body>
+<form id="application_form" data-provider="Greenhouse">
+  <h1>Flexential apply — contractor select</h1>
+
+  <div class="field">
+    <label class="q" for="phone">Phone *</label>
+    <input id="phone" name="phone" type="tel" required value="" />
+  </div>
+
+  <div class="field" id="field-flexential">
+    <label class="q">
+      Are you currently (or previously) working for Flexential as a contractor or contingent worker? *
+    </label>
+    <!-- Mimics Greenhouse react-select after user picked No -->
+    <div class="select-shell">
+      <div class="select__control">
+        <div class="select__value-container select__value-container--has-value">
+          <div class="select__single-value">No</div>
+          <div class="select__input-container">
+            <input class="select__input" id="flexential_select" role="combobox"
+              aria-autocomplete="list" autocomplete="off" value="" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label class="q">Will you now or in the future require visa sponsorship? *</label>
+    <div>
+      <label><input type="radio" name="sponsor" value="1" /> Yes</label>
+      <label><input type="radio" name="sponsor" value="0" checked /> No</label>
+    </div>
+  </div>
+
+  <button type="submit">Submit Application</button>
+</form>
+<script>
+  // Expose helpers for browser-automation --eval / --script
+  window.__fixtureReadSelect = function () {
+    const single = document.querySelector('#field-flexential .select__single-value');
+    return (single?.textContent || '').trim();
+  };
+  window.__fixturePhone = function () {
+    return document.getElementById('phone')?.value || '';
+  };
+</script>
+</body>
+</html>

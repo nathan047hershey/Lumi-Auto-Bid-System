@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Workday fixture</title></head>
+<body>
+  <div data-automation-id="jobPostingPage">
+    <form>
+      <div data-automation-id="formField-legalName">
+        <label id="lbl-first">First Name</label>
+        <input data-automation-id="legalNameSection--firstName" aria-labelledby="lbl-first" type="text" />
+      </div>
+      <div data-automation-id="formField-legalName-last">
+        <label id="lbl-last">Last Name</label>
+        <input data-automation-id="legalNameSection--lastName" aria-labelledby="lbl-last" type="text" />
+      </div>
+      <div data-automation-id="formField-email">
+        <label id="lbl-email">Email Address</label>
+        <input data-automation-id="email" aria-labelledby="lbl-email" type="email" />
+      </div>
+      <div data-automation-id="formField-phone">
+        <label id="lbl-phone">Phone Number</label>
+        <input data-automation-id="phone" aria-labelledby="lbl-phone" type="tel" />
+      </div>
+      <div data-automation-id="formField-addressCity">
+        <label id="lbl-city">City</label>
+        <input data-automation-id="addressSection_city" aria-labelledby="lbl-city" type="text" />
+      </div>
+      <div data-automation-id="formField-country">
+        <label id="lbl-country">Country</label>
+        <select data-automation-id="countryDropdown" aria-labelledby="lbl-country">
+          <option value="">Select one</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+        </select>
+      </div>
+      <div data-automation-id="formField-workAuth">
+        <label id="lbl-wa">Are you legally authorized to work in the country where this job is located?</label>
+        <select data-automation-id="workAuthSelect" aria-labelledby="lbl-wa">
+          <option value="">Select one</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div data-automation-id="formField-sponsorship">
+        <label id="lbl-sp">Will you now or in the future require sponsorship for employment visa status?</label>
+        <select data-automation-id="sponsorshipSelect" aria-labelledby="lbl-sp">
+          <option value="">Select one</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div data-automation-id="formField-linkedin">
+        <label id="lbl-li">LinkedIn</label>
+        <input data-automation-id="linkedin" aria-labelledby="lbl-li" type="text" />
+      </div>
+      <div data-automation-id="formField-website">
+        <label id="lbl-web">Website / Portfolio / GitHub</label>
+        <input data-automation-id="website" aria-labelledby="lbl-web" type="text" />
+      </div>
+      <button data-automation-id="bottom-submit" type="submit">Submit</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>GH fixture</title></head>
+<body>
+  <form id="application_form">
+    <div class="field">
+      <label>School</label>
+      <div class="select__control">
+        <input class="select__input" id="school-input" role="combobox" aria-autocomplete="list" style="opacity:0;width:120px;height:24px" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Degree</label>
+      <div class="select__control">
+        <input class="select__input" id="degree-input" role="combobox" aria-autocomplete="list" style="opacity:0;width:120px;height:24px" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Discipline</label>
+      <div class="select__control">
+        <input class="select__input" id="disc-input" role="combobox" aria-autocomplete="list" style="opacity:0;width:120px;height:24px" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Where do you currently reside? *</label>
+      <div class="select__control">
+        <input class="select__input" id="reside-input" role="combobox" aria-autocomplete="list" style="opacity:0;width:160px;height:24px" />
+      </div>
+    </div>
+    <div class="field">
+      <label>This position requires you to perform all work from the state in which you are hired. Will you consistently be working from this state while employed in this role? *</label>
+      <div class="select__control">
+        <input class="select__input" id="state-work-input" role="combobox" aria-autocomplete="list" style="opacity:0;width:120px;height:24px" />
+      </div>
+    </div>
+    <div class="field">
+      <label>How many years of professional experience do you have as a full stack web developer (front end + back end)? *</label>
+      <label><input type="radio" name="yoe" value="lt5"> Less than 5 years</label>
+      <label><input type="radio" name="yoe" value="5-6"> 5-6 years</label>
+      <label><input type="radio" name="yoe" value="7-10"> 7-10 years</label>
+      <label><input type="radio" name="yoe" value="10p"> 10+ years</label>
+    </div>
+    <div class="field">
+      <label for="gh">Please provide a URL to your GitHub, public portfolio. *</label>
+      <textarea id="gh" name="github"></textarea>
+    </div>
+  </form>
+  <script src="../content/fill.js"></script>
+  <script>
+    const profile = {
+      city: 'Palo Alto', state: 'CA', country: 'United States',
+      school: 'Virginia Tech', degree: 'Bachelor of Science', discipline: 'Computer Science',
+      education: 'B.S. Honors degrees in Computer Science at Virginia Tech in 2004 - 2007',
+      education_level: "Bachelor's", years_of_experience: '18',
+      github_url: 'https://github.com/example-user', work_authorization: 'Yes'
+    };
+    // Wait for IIFE
+    setTimeout(() => {
+      chrome = { runtime: { onMessage: { addListener() {} }, sendMessage() {} } };
+    }, 0);
+  </script>
+</body>
+</html>

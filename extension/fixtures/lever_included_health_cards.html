@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Lever Included Health–style cards</title></head>
+<body>
+  <form class="application-form" id="application-form">
+    <ul class="application-questions">
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">Please enter your zip code: *</div></div>
+        <div class="application-field">
+          <input class="card-field-input" name="cards[zip][field0]" placeholder="Type your response" type="text" />
+        </div>
+      </li>
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">Are you legally authorized to work in the U.S.? *</div></div>
+        <div class="application-field">
+          <label><input type="radio" name="cards[auth][field0]" value="Yes" /> Yes</label>
+          <label><input type="radio" name="cards[auth][field0]" value="No" /> No</label>
+        </div>
+      </li>
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">Will you now or in the future require sponsorship for employment visa status (e.g. H-1B status)? *</div></div>
+        <div class="application-field">
+          <label><input type="radio" name="cards[sponsor][field0]" value="Yes" /> Yes</label>
+          <label><input type="radio" name="cards[sponsor][field0]" value="No" /> No</label>
+        </div>
+      </li>
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">Have you previously worked for Grand Rounds, Included Health, or Doctor on Demand as a permanent or temporary employee? *</div></div>
+        <div class="application-field">
+          <label><input type="radio" name="cards[prev][field0]" value="Yes" /> Yes</label>
+          <label><input type="radio" name="cards[prev][field0]" value="No" /> No</label>
+        </div>
+      </li>
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">Do you consent to receive text (SMS) communications from Included Health recruiters regarding this application and related job-relevant updates? *</div></div>
+        <div class="application-field">
+          <label><input type="checkbox" name="cards[sms][field0]" value="I understand" required /> I understand</label>
+        </div>
+      </li>
+      <li class="application-question custom-question">
+        <div class="application-label"><div class="text">How many years of professional backend software development experience do you have (excluding internships, coursework, or bootcamps)? *</div></div>
+        <div class="application-field">
+          <label><input type="radio" name="cards[yoe][field0]" value="lt3" /> Less than 3 years</label>
+          <label><input type="radio" name="cards[yoe][field0]" value="3-4" /> 3–4 years</label>
+          <label><input type="radio" name="cards[yoe][field0]" value="5-6" /> 5–6 years</label>
+          <label><input type="radio" name="cards[yoe][field0]" value="7-9" /> 7–9 years</label>
+          <label><input type="radio" name="cards[yoe][field0]" value="10p" /> 10+ years</label>
+        </div>
+      </li>
+      <li class="application-question">
+        <label for="eeo-name">Name</label>
+        <input id="eeo-name" name="eeo[disabilitySignature]" type="text" />
+        <label for="eeo-date">Date</label>
+        <input id="eeo-date" name="eeo[disabilityDate]" type="text" placeholder="MM/DD/YYYY" />
+      </li>
+    </ul>
+    <button type="submit">Submit application</button>
+  </form>
+</body>
+</html>

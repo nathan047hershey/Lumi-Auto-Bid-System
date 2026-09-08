@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Ashby fixture</title></head>
+<body>
+  <div class="ashby-application-form" id="ashby_embed">
+    <form>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-first">First Name *</label>
+        <input id="ashby-first" name="firstName" type="text" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-last">Last Name *</label>
+        <input id="ashby-last" name="lastName" type="text" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-email">Email *</label>
+        <input id="ashby-email" name="email" type="email" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-phone">Phone Number *</label>
+        <input id="ashby-phone" name="phone" type="tel" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-city">City *</label>
+        <input id="ashby-city" name="city" type="text" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-li">LinkedIn Profile</label>
+        <input id="ashby-li" name="linkedInUrl" type="url" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-gh">GitHub / Portfolio URL</label>
+        <input id="ashby-gh" name="website" type="url" />
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-auth">Are you authorized to work in the United States? *</label>
+        <select id="ashby-auth" name="workAuth">
+          <option value="">Select...</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-sponsor">Do you require visa sponsorship? *</label>
+        <select id="ashby-sponsor" name="sponsorship">
+          <option value="">Select...</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label>Years of experience as a software engineer *</label>
+        <label><input type="radio" name="ashby-yoe" value="0-2"> Less than 5 years</label>
+        <label><input type="radio" name="ashby-yoe" value="5-6"> 5-6 years</label>
+        <label><input type="radio" name="ashby-yoe" value="7-10"> 7-10 years</label>
+        <label><input type="radio" name="ashby-yoe" value="10+"> 10+ years</label>
+      </div>
+      <div class="ashby-application-form-field-entry">
+        <label for="ashby-salary">Desired salary *</label>
+        <input id="ashby-salary" name="salary" type="text" />
+      </div>
+      <button type="submit">Submit Application</button>
+    </form>
+  </div>
+</body>
+</html>

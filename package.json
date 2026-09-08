@@ -1,0 +1,31 @@
+{
+  "name": "job-apply-master",
+  "version": "1.0.0",
+  "description": "Job Application Management Platform",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "start": "npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "seed": "node server/scripts/seed_platform_data.js",
+    "mail:setup": "node server/scripts/completeMailForwardSetup.js",
+    "mail:tunnel": "cloudflared tunnel --url http://127.0.0.1:9017",
+    "mail:bridge": "node server/scripts/outlookImapBridge.js",
+    "mail:open-pa": "powershell -ExecutionPolicy Bypass -File server/scripts/openPowerAutomateSetup.ps1",
+    "test:autofill": "node extension/fixtures/test_ats_classify_unit.js && node extension/fixtures/test_education_fixed.js && node extension/fixtures/test_latent_bugs.js && node extension/fixtures/test_multi_ats.js && node extension/fixtures/test_ats_detailed.js && node extension/fixtures/test_all_platforms_all_types.js && node extension/fixtures/test_autofill_hard_cases.js && node extension/fixtures/test_more_platforms.js",
+    "test:autofill:hard": "node extension/fixtures/test_autofill_hard_cases.js",
+    "test:autofill:more": "node extension/fixtures/test_more_platforms.js && node extension/fixtures/test_more_edge_cases.js",
+    "test:captcha": "node extension/fixtures/test_captcha_pass.js && node extension/fixtures/test_captcha_vendor_engineer.js && node extension/fixtures/test_captcha_all_platforms.js && node extension/fixtures/test_more_edge_cases.js && node extension/fixtures/test_unattended_captcha.js",
+    "test:bidder": "node extension/fixtures/test_ats_detect.js && node extension/fixtures/test_captcha_pass.js && node extension/fixtures/test_captcha_vendor_engineer.js && node extension/fixtures/test_captcha_all_platforms.js && node extension/fixtures/test_unattended_captcha.js && node extension/fixtures/test_autofill_engine.js && node extension/fixtures/test_fill_verify.js && node extension/fixtures/test_bidder_queue_defaults.js && node extension/fixtures/test_select_wait_loading.js && node extension/fixtures/test_bidder_brain.js && node extension/fixtures/test_bidder_fill_unit.js && node extension/fixtures/test_bidder_page_bridge.js && node extension/fixtures/test_bidder_ready_queue.js && node extension/fixtures/test_bidder_onetrust_course.js && node extension/fixtures/test_autofill_file_routing.js && node extension/fixtures/test_autofill_select_radio.js && node extension/fixtures/test_coreweave_reliability.js && node extension/fixtures/test_snap_mcq_answers.js && node extension/fixtures/test_update_state_success.js && node extension/fixtures/test_lumi_bidder_prefs.js",
+    "test:reliability": "node extension/fixtures/test_coreweave_reliability.js && node extension/fixtures/test_autofill_select_radio.js && node extension/fixtures/test_email_otp_instruct.js && node extension/fixtures/test_fill_verify.js",
+    "test:bidder:live": "node extension/fixtures/test_bidder_process_live.js",
+    "test:edge": "node extension/fixtures/test_more_edge_cases.js",
+    "test:all": "npm run test:bidder && npm run test:autofill && npm run test:edge && npm run test:captcha"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "playwright": "^1.62.1"
+  }
+}

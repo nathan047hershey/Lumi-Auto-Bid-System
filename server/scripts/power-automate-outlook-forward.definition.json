@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": { "defaultValue": {}, "type": "Object" },
+    "webhookUrl": {
+      "type": "String",
+      "defaultValue": "REPLACE_WEBHOOK_URL"
+    }
+  },
+  "triggers": {
+    "When_a_new_email_arrives_(V3)": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['office365']['connectionId']"
+          }
+        },
+        "method": "get",
+        "path": "/v3/Mail/OnNewEmail",
+        "queries": {
+          "importance": "Any",
+          "fetchOnlyWithAttachment": false,
+          "includeAttachments": false,
+          "folderPath": "Inbox"
+        }
+      },
+      "recurrence": {
+        "frequency": "Minute",
+        "interval": 1
+      },
+      "splitOn": "@triggerBody()?['value']"
+    }
+  },
+  "actions": {
+    "Condition_Greenhouse_or_code": {
+      "type": "If",
+      "expression": {
+        "or": [
+          {
+            "contains": [
+              "@toLower(coalesce(triggerBody()?['subject'], ''))",
+              "greenhouse"
+            ]
+          },
+          {
+            "contains": [
+              "@toLower(coalesce(triggerBody()?['subject'], ''))",
+              "security code"
+            ]
+          },
+          {
+            "contains": [
+              "@toLower(coalesce(triggerBody()?['subject'], ''))",
+              "verification"
+            ]
+          },
+          {
+            "contains": [
+              "@toLower(coalesce(triggerBody()?['from'], ''))",
+              "greenhouse"
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "HTTP_POST_to_Lumi": {
+          "type": "Http",
+          "inputs": {
+            "method": "POST",
+            "uri": "@parameters('webhookUrl')",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "subject": "@{triggerBody()?['subject']}",
+              "text": "@{coalesce(triggerBody()?['bodyPreview'], triggerBody()?['body'])}",
+              "from": "@{triggerBody()?['from']}",
+              "received_at": "@{triggerBody()?['receivedDateTime']}",
+              "message_id": "@{triggerBody()?['id']}"
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {}
+      }
+    }
+  },
+  "outputs": {}
+}

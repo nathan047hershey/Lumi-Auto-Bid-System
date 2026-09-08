@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Autofill Course Fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input, textarea, select { width: 100%; margin-top: 0.25rem; padding: 0.4rem; }
+  </style>
+</head>
+<body>
+  <h1>Apply — Autofill Course Fixture</h1>
+  <form id="apply">
+    <label>First Name <input id="first_name" name="first_name" type="text" /></label>
+    <label>Last Name <input id="last_name" name="last_name" type="text" /></label>
+    <label>Email <input id="email" name="email" type="email" /></label>
+    <label>Phone <input id="phone" name="phone" type="tel" /></label>
+    <label>Why do you want this role?
+      <textarea id="q_why" name="q_why" rows="4" data-bidder-q-selected="1"></textarea>
+    </label>
+    <label>Expected salary / compensation
+      <input id="q_sal" name="q_sal" type="text" data-bidder-q-selected="1" />
+    </label>
+    <label>Are you authorized to work in the US?
+      <input id="q_auth" name="q_auth" type="text" />
+    </label>
+    <label>Years of experience with React
+      <input id="q_react" name="q_react" type="text" data-bidder-q-selected="1" />
+    </label>
+  </form>
+</body>
+</html>

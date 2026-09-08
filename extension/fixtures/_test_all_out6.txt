@@ -1,0 +1,1576 @@
+
+> job-apply-master@1.0.0 test:all
+> npm run test:bidder && npm run test:autofill && npm run test:edge && npm run test:captcha
+
+
+> job-apply-master@1.0.0 test:bidder
+> node extension/fixtures/test_ats_detect.js && node extension/fixtures/test_captcha_pass.js && node extension/fixtures/test_captcha_vendor_engineer.js && node extension/fixtures/test_captcha_all_platforms.js && node extension/fixtures/test_unattended_captcha.js && node extension/fixtures/test_autofill_engine.js && node extension/fixtures/test_select_wait_loading.js && node extension/fixtures/test_bidder_brain.js && node extension/fixtures/test_bidder_fill_unit.js && node extension/fixtures/test_bidder_page_bridge.js && node extension/fixtures/test_bidder_ready_queue.js && node extension/fixtures/test_bidder_onetrust_course.js && node extension/fixtures/test_autofill_file_routing.js && node extension/fixtures/test_autofill_select_radio.js
+
+PASS oracle host
+PASS greenhouse host
+PASS oracle not greenhouse
+PASS oracle url wins over dom greenhouse
+PASS generic when unknown url and dom greenhouse
+PASS greenhouse url uses greenhouse engine
+PASS ashby host
+PASS lever host
+PASS workday host
+PASS icims host
+PASS bamboohr host
+PASS smartrecruiters host
+PASS linkedin host
+PASS linkedin always wins
+PASS ashby url wins over greenhouse dom
+PASS workday url wins over greenhouse dom
+PASS ashby JD url detected
+PASS ashby application not JD
+PASS ashbyApplicationUrl appends /application
+PASS ashbyApplicationUrl idempotent
+
+All 20 ats-detect checks passed.
+node.exe : (node:61720) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_ats_detect.js is not specified and it doesn't parse as CommonJS.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:61720) [M...se as CommonJS.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS recaptcha widget
+PASS cloudflare copy
+PASS turnstile token + challenge
+PASS arkose mentioned
+PASS normal apply form not captcha
+PASS login wall
+PASS apply form with sign-in word not login wall
+PASS oracle-ish human check
+PASS passive widget is captcha
+PASS passive widget NOT blocking when form ready
+PASS passive widget NOT blocking before form (keep polling)
+PASS cloudflare interstitial IS blocking
+PASS hard vendor without widget still blocks when formReady
+PASS hard vendor with on-form widget does not block fill
+PASS login wall IS blocking even with formReady
+
+All 15 captcha-pass checks passed.
+(node:61356) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_captcha_pass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS all vendors listed
+PASS catalog size
+PASS detect recaptcha
+PASS detect hcaptcha
+PASS detect turnstile
+PASS detect arkose
+PASS detect datadome
+PASS detect perimeterx
+PASS detect geetest
+PASS detect aws_waf
+PASS detect mtcaptcha
+PASS detect keycaptcha
+PASS detect friendly
+PASS detect lemin
+PASS detect cloudflare
+PASS recaptcha helper ON ΓåÆ wait
+PASS hcaptcha helper ON ΓåÆ wait
+PASS turnstile helper ON ΓåÆ wait
+PASS arkose helper ON ΓåÆ wait
+PASS datadome helper ON ΓåÆ wait
+PASS geetest helper ON ΓåÆ wait
+PASS aws_waf helper ON ΓåÆ wait
+PASS generic helper ON ΓåÆ wait
+PASS hcaptcha helper OFF ΓåÆ skip
+PASS arkose helper OFF ΓåÆ skip
+PASS login human
+PASS recommend recaptcha
+PASS recommend turnstile
+PASS label aws
+PASS classify turnstile
+
+All 30 captcha-vendor-engineer checks passed.
+(node:63448) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_captcha_vendor_engineer.js is not specified and it doesn't parse 
+as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+=== CAPTCHA unit matrix (all platforms ├ù variants) ===
+PASS greenhouse/clean_apply
+PASS greenhouse/recaptcha_widget
+PASS greenhouse/hcaptcha_widget
+PASS greenhouse/turnstile_widget
+PASS greenhouse/arkose_html
+PASS greenhouse/geetest_html
+PASS greenhouse/aws_waf_html
+PASS greenhouse/mtcaptcha_html
+PASS greenhouse/cloudflare_challenge_copy
+PASS greenhouse/datadome_copy
+PASS greenhouse/oracle_human_prove
+PASS greenhouse/login_wall
+PASS greenhouse/recaptcha_iframe
+PASS lever/clean_apply
+PASS lever/recaptcha_widget
+PASS lever/hcaptcha_widget
+PASS lever/turnstile_widget
+PASS lever/arkose_html
+PASS lever/geetest_html
+PASS lever/aws_waf_html
+PASS lever/mtcaptcha_html
+PASS lever/cloudflare_challenge_copy
+PASS lever/datadome_copy
+PASS lever/oracle_human_prove
+PASS lever/login_wall
+PASS lever/recaptcha_iframe
+PASS ashby/clean_apply
+PASS ashby/recaptcha_widget
+PASS ashby/hcaptcha_widget
+PASS ashby/turnstile_widget
+PASS ashby/arkose_html
+PASS ashby/geetest_html
+PASS ashby/aws_waf_html
+PASS ashby/mtcaptcha_html
+PASS ashby/cloudflare_challenge_copy
+PASS ashby/datadome_copy
+PASS ashby/oracle_human_prove
+PASS ashby/login_wall
+PASS ashby/recaptcha_iframe
+PASS workday/clean_apply
+PASS workday/recaptcha_widget
+PASS workday/hcaptcha_widget
+PASS workday/turnstile_widget
+PASS workday/arkose_html
+PASS workday/geetest_html
+PASS workday/aws_waf_html
+PASS workday/mtcaptcha_html
+PASS workday/cloudflare_challenge_copy
+PASS workday/datadome_copy
+PASS workday/oracle_human_prove
+PASS workday/login_wall
+PASS workday/recaptcha_iframe
+PASS oracle/clean_apply
+PASS oracle/recaptcha_widget
+PASS oracle/hcaptcha_widget
+PASS oracle/turnstile_widget
+PASS oracle/arkose_html
+PASS oracle/geetest_html
+PASS oracle/aws_waf_html
+PASS oracle/mtcaptcha_html
+PASS oracle/cloudflare_challenge_copy
+PASS oracle/datadome_copy
+PASS oracle/oracle_human_prove
+PASS oracle/login_wall
+PASS oracle/recaptcha_iframe
+PASS smartrecruiters/clean_apply
+PASS smartrecruiters/recaptcha_widget
+PASS smartrecruiters/hcaptcha_widget
+PASS smartrecruiters/turnstile_widget
+PASS smartrecruiters/arkose_html
+PASS smartrecruiters/geetest_html
+PASS smartrecruiters/aws_waf_html
+PASS smartrecruiters/mtcaptcha_html
+PASS smartrecruiters/cloudflare_challenge_copy
+PASS smartrecruiters/datadome_copy
+PASS smartrecruiters/oracle_human_prove
+PASS smartrecruiters/login_wall
+PASS smartrecruiters/recaptcha_iframe
+PASS icims/clean_apply
+PASS icims/recaptcha_widget
+PASS icims/hcaptcha_widget
+PASS icims/turnstile_widget
+PASS icims/arkose_html
+PASS icims/geetest_html
+PASS icims/aws_waf_html
+PASS icims/mtcaptcha_html
+PASS icims/cloudflare_challenge_copy
+PASS icims/datadome_copy
+PASS icims/oracle_human_prove
+PASS icims/login_wall
+PASS icims/recaptcha_iframe
+PASS bamboohr/clean_apply
+PASS bamboohr/recaptcha_widget
+PASS bamboohr/hcaptcha_widget
+PASS bamboohr/turnstile_widget
+PASS bamboohr/arkose_html
+PASS bamboohr/geetest_html
+PASS bamboohr/aws_waf_html
+PASS bamboohr/mtcaptcha_html
+PASS bamboohr/cloudflare_challenge_copy
+PASS bamboohr/datadome_copy
+PASS bamboohr/oracle_human_prove
+PASS bamboohr/login_wall
+PASS bamboohr/recaptcha_iframe
+PASS generic/clean_apply
+PASS generic/recaptcha_widget
+PASS generic/hcaptcha_widget
+PASS generic/turnstile_widget
+PASS generic/arkose_html
+PASS generic/geetest_html
+PASS generic/aws_waf_html
+PASS generic/mtcaptcha_html
+PASS generic/cloudflare_challenge_copy
+PASS generic/datadome_copy
+PASS generic/oracle_human_prove
+PASS generic/login_wall
+PASS generic/recaptcha_iframe
+PASS linkedin/clean_apply
+PASS linkedin/recaptcha_widget
+PASS linkedin/hcaptcha_widget
+PASS linkedin/turnstile_widget
+PASS linkedin/arkose_html
+PASS linkedin/geetest_html
+PASS linkedin/aws_waf_html
+PASS linkedin/mtcaptcha_html
+PASS linkedin/cloudflare_challenge_copy
+PASS linkedin/datadome_copy
+PASS linkedin/oracle_human_prove
+PASS linkedin/login_wall
+PASS linkedin/recaptcha_iframe
+
+=== CAPTCHA DOM matrix (widget selectors) ===
+(node:62808) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/lib/captchaPass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+DOM PASS greenhouse/clean_apply 
+DOM PASS greenhouse/recaptcha_widget 
+DOM PASS greenhouse/hcaptcha_widget 
+DOM PASS greenhouse/turnstile_widget 
+DOM PASS greenhouse/arkose_html 
+DOM PASS greenhouse/cloudflare_challenge_copy 
+DOM PASS greenhouse/datadome_copy 
+DOM PASS greenhouse/oracle_human_prove 
+DOM PASS greenhouse/login_wall 
+DOM PASS greenhouse/recaptcha_iframe 
+DOM PASS lever/clean_apply 
+DOM PASS lever/recaptcha_widget 
+DOM PASS lever/hcaptcha_widget 
+DOM PASS lever/turnstile_widget 
+DOM PASS lever/arkose_html 
+DOM PASS lever/cloudflare_challenge_copy 
+DOM PASS lever/datadome_copy 
+DOM PASS lever/oracle_human_prove 
+DOM PASS lever/login_wall 
+DOM PASS lever/recaptcha_iframe 
+DOM PASS ashby/clean_apply 
+DOM PASS ashby/recaptcha_widget 
+DOM PASS ashby/hcaptcha_widget 
+DOM PASS ashby/turnstile_widget 
+DOM PASS ashby/arkose_html 
+DOM PASS ashby/cloudflare_challenge_copy 
+DOM PASS ashby/datadome_copy 
+DOM PASS ashby/oracle_human_prove 
+DOM PASS ashby/login_wall 
+DOM PASS ashby/recaptcha_iframe 
+DOM PASS workday/clean_apply 
+DOM PASS workday/recaptcha_widget 
+DOM PASS workday/hcaptcha_widget 
+DOM PASS workday/turnstile_widget 
+DOM PASS workday/arkose_html 
+DOM PASS workday/cloudflare_challenge_copy 
+DOM PASS workday/datadome_copy 
+DOM PASS workday/oracle_human_prove 
+DOM PASS workday/login_wall 
+DOM PASS workday/recaptcha_iframe 
+DOM PASS oracle/clean_apply 
+DOM PASS oracle/recaptcha_widget 
+DOM PASS oracle/hcaptcha_widget 
+DOM PASS oracle/turnstile_widget 
+DOM PASS oracle/arkose_html 
+DOM PASS oracle/cloudflare_challenge_copy 
+DOM PASS oracle/datadome_copy 
+DOM PASS oracle/oracle_human_prove 
+DOM PASS oracle/login_wall 
+DOM PASS oracle/recaptcha_iframe 
+DOM PASS smartrecruiters/clean_apply 
+DOM PASS smartrecruiters/recaptcha_widget 
+DOM PASS smartrecruiters/hcaptcha_widget 
+DOM PASS smartrecruiters/turnstile_widget 
+DOM PASS smartrecruiters/arkose_html 
+DOM PASS smartrecruiters/cloudflare_challenge_copy 
+DOM PASS smartrecruiters/datadome_copy 
+DOM PASS smartrecruiters/oracle_human_prove 
+DOM PASS smartrecruiters/login_wall 
+DOM PASS smartrecruiters/recaptcha_iframe 
+DOM PASS icims/clean_apply 
+DOM PASS icims/recaptcha_widget 
+DOM PASS icims/hcaptcha_widget 
+DOM PASS icims/turnstile_widget 
+DOM PASS icims/arkose_html 
+DOM PASS icims/cloudflare_challenge_copy 
+DOM PASS icims/datadome_copy 
+DOM PASS icims/oracle_human_prove 
+DOM PASS icims/login_wall 
+DOM PASS icims/recaptcha_iframe 
+DOM PASS bamboohr/clean_apply 
+DOM PASS bamboohr/recaptcha_widget 
+DOM PASS bamboohr/hcaptcha_widget 
+DOM PASS bamboohr/turnstile_widget 
+DOM PASS bamboohr/arkose_html 
+DOM PASS bamboohr/cloudflare_challenge_copy 
+DOM PASS bamboohr/datadome_copy 
+DOM PASS bamboohr/oracle_human_prove 
+DOM PASS bamboohr/login_wall 
+DOM PASS bamboohr/recaptcha_iframe 
+DOM PASS generic/clean_apply 
+DOM PASS generic/recaptcha_widget 
+DOM PASS generic/hcaptcha_widget 
+DOM PASS generic/turnstile_widget 
+DOM PASS generic/arkose_html 
+DOM PASS generic/cloudflare_challenge_copy 
+DOM PASS generic/datadome_copy 
+DOM PASS generic/oracle_human_prove 
+DOM PASS generic/login_wall 
+DOM PASS generic/recaptcha_iframe 
+DOM PASS linkedin/clean_apply 
+DOM PASS linkedin/recaptcha_widget 
+DOM PASS linkedin/hcaptcha_widget 
+DOM PASS linkedin/turnstile_widget 
+DOM PASS linkedin/arkose_html 
+DOM PASS linkedin/cloudflare_challenge_copy 
+DOM PASS linkedin/datadome_copy 
+DOM PASS linkedin/oracle_human_prove 
+DOM PASS linkedin/login_wall 
+DOM PASS linkedin/recaptcha_iframe 
+
+{
+  "unit": {
+    "failed": 0,
+    "passed": 130,
+    "total": 130
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 100,
+    "total": 100
+  },
+  "platforms": [
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "oracle",
+    "smartrecruiters",
+    "icims",
+    "bamboohr",
+    "generic",
+    "linkedin"
+  ],
+  "variants": [
+    "clean_apply",
+    "recaptcha_widget",
+    "hcaptcha_widget",
+    "turnstile_widget",
+    "arkose_html",
+    "geetest_html",
+    "aws_waf_html",
+    "mtcaptcha_html",
+    "cloudflare_challenge_copy",
+    "datadome_copy",
+    "oracle_human_prove",
+    "login_wall",
+    "recaptcha_iframe"
+  ]
+}
+PASS defaults unattended off
+PASS defaults grace 45s
+PASS defaults attended timeout 1h
+PASS unattended uses grace
+PASS unattended zero grace
+PASS attended long wait
+PASS attended focus off = no wait
+PASS abandon after grace
+PASS no abandon if cleared
+PASS no abandon attended
+PASS defaults helper off
+PASS defaults helper wait 3m
+PASS helper stretches grace to 3m
+PASS no helper keeps 45s
+
+All 14 unattended-captcha checks passed.
+(node:63188) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_unattended_captcha.js is not specified and it doesn't parse as 
+CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS engine id
+PASS max pages
+PASS oracle label
+PASS ashby label
+PASS workday label
+PASS icims label
+PASS bamboohr label
+PASS generic label
+PASS linkedin label
+PASS fingerprint stable
+PASS fingerprint changes on page
+PASS merge overwrites by id
+PASS merge keeps new
+PASS pick new questions
+PASS should advance when fp changes
+PASS should stop when fp same
+PASS should stop at max pages
+PASS should not advance without next click
+PASS should advance when after fp empty
+PASS merge by label
+PASS fingerprint null safe
+PASS pick skips answered label
+
+All 22 autofill-engine checks passed.
+(node:62380) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_autofill_engine.js is not specified and it doesn't parse as 
+CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS filter drops Loading
+PASS filter drops Searching
+PASS keep waiting while loading
+PASS keep waiting empty not loading
+PASS stop when options ready
+PASS stop on timeout even loading
+PASS human flow includes wait
+PASS no wait when complete
+PASS wait when incomplete loading
+PASS wait when incomplete empty
+PASS no wait when options ready to pick
+PASS verify rejects Select...
+PASS verify accepts CS
+PASS verify soft CS/Computing
+PASS verify rejects empty
+PASS type before wait for typeahead
+PASS no pre-wait before input
+
+All 17 select-wait-loading checks passed.
+[paths] DATA_ROOT = E:\job-apply-master\database
+PASS engine version
+PASS cv qa ok when keywords present
+PASS cv qa fails short+missing file
+PASS extras has rules
+PASS keywords extracted
+PASS field attempt logged
+
+All 6 bidder-brain checks passed.
+PASS first name
+PASS email
+PASS salary
+PASS previous employer
+PASS essay
+PASS gh host
+PASS block lever
+PASS verify yes
+PASS verify no soft
+PASS consent checkbox
+PASS skip eeo checkbox
+PASS skip bare eeo
+PASS fingerprint includes path
+PASS max retries locked
+PASS budget 5min
+PASS max pages 5
+
+All 16 bidder-fill unit checks passed.
+PASS process maps
+PASS next maps
+PASS stop maps
+PASS reply type constant
+PASS selected link filter query
+PASS process syncs page token
+PASS process passes applicationIds
+PASS process passes jobLinkIds
+PASS ping maps
+PASS captcha resume maps
+PASS captcha focus maps
+PASS captcha skip maps
+
+All 12 page-bridge checks passed.
+PASS bidder ready queue for OneTrust #5 {
+  bobCount: 1,
+  appId: 52,
+  url: 'https://job-boards.greenhouse.io/embed/job_app?for=onetrust&token=8031894'
+}
+PASS OneTrust course path {
+  appId: 52,
+  courseId: 45,
+  lastEvents: [ 'awaiting_manual_submit', 'package_saved', 'queue_enqueued' ]
+}
+PASS autofill file routing (cover letter vs resume)
+PASS controlMatch select/radio/checkbox (Simplify/JobWizard patterns)
+
+> job-apply-master@1.0.0 test:autofill
+> node extension/fixtures/test_ats_classify_unit.js && node extension/fixtures/test_education_fixed.js && node extension/fixtures/test_latent_bugs.js && node extension/fixtures/test_multi_ats.js && node extension/fixtures/test_ats_detailed.js && node extension/fixtures/test_all_platforms_all_types.js && node extension/fixtures/test_autofill_hard_cases.js && node extension/fixtures/test_more_platforms.js
+
+OK gh host
+OK lever host
+OK ashby host
+OK workday host
+OK sr host
+OK ashby before workday attr
+OK random automation-id not workday
+OK wd firstName autoId
+OK wd lastName autoId
+OK wd work auth label
+OK lever full name
+OK ashby sponsor
+OK gh portfolio
+OK city reside
+OK yoe
+OK relocate
+OK host first workday
+OK visa sponsor full
+OK desired salary
+OK nda acknowledge
+OK ai note consent
+{
+  "failed": 0,
+  "total": 21
+}
+OK school 
+OK discipline 
+OK degree 
+OK yoe18 
+OK github label 
+OK reside 
+OK state work 
+OK legal entity state 
+OK remote yesno 
+OK country 
+OK not state picker 
+OK school label 
+OK yoe q 
+OK reject Select... label 
+OK clean Discipline Select 
+OK discipline from cleaned 
+OK Select... not discipline 
+OK Select... is question trap 
+{
+  "edu": {
+    "school": "Virginia Tech",
+    "degree": "B.S. Honors degrees",
+    "discipline": "Computer Science"
+  },
+  "yoe": "10+ years",
+  "failed": 0
+}
+PASS fieldKey stable
+PASS fieldKey distinct
+PASS fieldKey no random
+PASS over_18 US default
+PASS over_18 keeps Yes
+PASS over_18 keeps No
+PASS over_18 non-US empty
+
+All 7 latent-bug checks passed.
+OK lever filled=10
+OK ashby filled=11
+OK workday filled=10
+OK smartrecruiters filled=8
+OK oracle filled=9
+{
+  "failed": 0,
+  "results": [
+    {
+      "name": "lever",
+      "ok": true,
+      "failures": [],
+      "ats": "lever",
+      "kinds": [
+        "full_name",
+        "email",
+        "phone",
+        "question",
+        "linkedin",
+        "github",
+        "city",
+        "work_authorization",
+        "requires_sponsorship",
+        "salary",
+        "years_of_experience"
+      ],
+      "filled": 10,
+      "dom": {
+        "email": "alex.testuser@example.com",
+        "phone": "3182028037",
+        "workauth": "Yes",
+        "sponsor": "No",
+        "yoe": "10p",
+        "github": "https://github.com/example",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "ashby",
+      "ok": true,
+      "failures": [],
+      "ats": "ashby",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "linkedin",
+        "github",
+        "work_authorization",
+        "requires_sponsorship",
+        "salary",
+        "years_of_experience"
+      ],
+      "filled": 11,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "auth": "Yes",
+        "sponsor": "No",
+        "yoe": "10+",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "workday",
+      "ok": true,
+      "failures": [],
+      "ats": "workday",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "work_authorization",
+        "requires_sponsorship",
+        "linkedin",
+        "github"
+      ],
+      "filled": 10,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "country": "US",
+        "auth": "Yes",
+        "sponsor": "No",
+        "city": "Palo Alto, CA",
+        "web": "https://github.com/example"
+      }
+    },
+    {
+      "name": "smartrecruiters",
+      "ok": true,
+      "failures": [],
+      "ats": "smartrecruiters",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "linkedin",
+        "work_authorization"
+      ],
+      "filled": 8,
+      "dom": {
+        "first": "Alex",
+        "email": "alex.testuser@example.com",
+        "country": "US",
+        "auth": "Yes",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "oracle",
+      "ok": true,
+      "failures": [],
+      "ats": "oracle",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "linkedin",
+        "work_authorization",
+        "requires_sponsorship"
+      ],
+      "filled": 9,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "3182028037",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "auth": "Yes",
+        "sponsor": "No",
+        "li": "https://www.linkedin.com/in/alex-testuser"
+      }
+    }
+  ]
+}
+
+======== PASS lever (ats=lever, filled=10) ========
+Fields:
+  [full_name] Full name *
+  [email] Email *
+  [phone] Phone *
+  [question] Current company
+  [linkedin] LinkedIn URL
+  [github] GitHub URL
+  [city] Location (City) *
+  [work_authorization] Are you legally authorized to work in the United States? *
+  [requires_sponsorship] Will you now or in the future require sponsorship? *
+  [salary] What is your desired salary? *
+  [years_of_experience] How many years of professional experience do you have? *
+DOM: {
+  "name": "Alex Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "3182028037",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "github": "https://github.com/example-user",
+  "city": "Palo Alto, CA",
+  "workauth": "Yes",
+  "sponsor": "No",
+  "yoe": "10p",
+  "salary": "$79,000"
+}
+
+======== PASS ashby (ats=ashby, filled=11) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [phone] Phone Number *
+  [city] City *
+  [linkedin] LinkedIn Profile
+  [github] GitHub / Portfolio URL
+  [work_authorization] Are you authorized to work in the United States? *
+  [requires_sponsorship] Do you require visa sponsorship? *
+  [salary] Desired salary *
+  [years_of_experience] Years of experience as a software engineer *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "3182028037",
+  "city": "Palo Alto, CA",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "github": "https://github.com/example-user",
+  "auth": "Yes",
+  "sponsor": "No",
+  "yoe": "10+",
+  "salary": "$79,000"
+}
+
+======== PASS workday (ats=workday, filled=10) ========
+Fields:
+  [first_name] First Name
+  [last_name] Last Name
+  [email] Email Address
+  [phone] Phone Number
+  [city] City
+  [country] Country
+  [work_authorization] Are you legally authorized to work in the country where this job is lo
+  [requires_sponsorship] Will you now or in the future require sponsorship for employment visa 
+  [linkedin] LinkedIn
+  [github] Website / Portfolio / GitHub
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "3182028037",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "auth": "Yes",
+  "sponsor": "No",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "web": "https://github.com/example-user"
+}
+
+======== PASS smartrecruiters (ats=smartrecruiters, filled=8) ========
+Fields:
+  [first_name] First name *
+  [last_name] Last name *
+  [email] Email *
+  [phone] Phone *
+  [city] City *
+  [country] Country *
+  [linkedin] LinkedIn profile
+  [work_authorization] Are you eligible to work in this country? *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "3182028037",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "auth": "Yes"
+}
+
+======== PASS oracle (ats=oracle, filled=9) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [phone] Phone *
+  [city] City *
+  [country] Country *
+  [linkedin] LinkedIn Profile
+  [work_authorization] Are you legally authorized to work in the United States? *
+  [requires_sponsorship] Will you now or in the future require sponsorship? *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "3182028037",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "li": "https://www.linkedin.com/in/alex-testuser",
+  "auth": "Yes",
+  "sponsor": "No"
+}
+
+======== PASS greenhouse_detailed (ats=greenhouse, filled=14) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [country] Country * [combobox]
+  [school] School [combobox]
+  [degree] Degree [combobox]
+  [discipline] Discipline [combobox]
+  [city] Where do you currently reside? * [combobox]
+  [work_authorization] Are you able to work remotely and maintain a work environment that is  [combobox]
+  [work_authorization] If you reside in a US state where we have a legal entity, will you con [combobox]
+  [github] Please provide a URL to your GitHub, public portfolio. *
+  [previous_employer_no] Have you ever worked at CIAT? * [combobox]
+  [salary] What is your desired salary? *
+  [years_of_experience] How many years of professional experience do you have as a full stack 
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "country": "United States",
+  "school": "Virginia Tech",
+  "degree": "Bachelor's Degree",
+  "discipline": "Computer Science",
+  "reside": "Somewhere else",
+  "remote": "Yes",
+  "stwork": "Yes",
+  "yoe": "10p",
+  "github": "https://github.com/example-user",
+  "ciat": "No",
+  "salary": "$79,000"
+}
+
+Wrote E:\job-apply-master\extension\fixtures\ats_detailed_report.json
+{
+  "passed": 6,
+  "failed": 0,
+  "platforms": [
+    {
+      "name": "lever",
+      "ok": true,
+      "ats": "lever",
+      "filled": 10,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "ashby",
+      "ok": true,
+      "ats": "ashby",
+      "filled": 11,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "workday",
+      "ok": true,
+      "ats": "workday",
+      "filled": 10,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "smartrecruiters",
+      "ok": true,
+      "ats": "smartrecruiters",
+      "filled": 8,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "oracle",
+      "ok": true,
+      "ats": "oracle",
+      "filled": 9,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "greenhouse_detailed",
+      "ok": true,
+      "ats": "greenhouse",
+      "filled": 14,
+      "kinds": 0,
+      "values": 0
+    }
+  ]
+}
+
+======== PASS greenhouse (ats=greenhouse, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS lever (ats=lever, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS ashby (ats=ashby, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS workday (ats=workday, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS smartrecruiters (ats=smartrecruiters, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS icims (ats=icims, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS bamboohr (ats=bamboohr, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+======== PASS oracle (ats=oracle, filled=37, written=4) ========
+Kinds: address, city, country, degree, discipline, earliest_start_date, education_level, email, first_name, full_name, gender, github, how_heard, last_name, linkedin, notice_period, over_18, phone, postal_code, preferred_name, previous_employer_no, question, requires_sponsorship, salary, school, state, website_url, willing_to_relocate, work_authorization, years_of_experience
+
+Wrote E:\job-apply-master\extension\fixtures\all_platforms_all_types_report.json
+{
+  "passed": 8,
+  "failed": 0,
+  "summary": [
+    {
+      "platform": "greenhouse",
+      "ok": true,
+      "ats": "greenhouse",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "lever",
+      "ok": true,
+      "ats": "lever",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "ashby",
+      "ok": true,
+      "ats": "ashby",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "workday",
+      "ok": true,
+      "ats": "workday",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "smartrecruiters",
+      "ok": true,
+      "ats": "smartrecruiters",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "icims",
+      "ok": true,
+      "ats": "icims",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "bamboohr",
+      "ok": true,
+      "ats": "bamboohr",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    },
+    {
+      "platform": "oracle",
+      "ok": true,
+      "ats": "oracle",
+      "filled": 37,
+      "written": 4,
+      "missingKinds": 0,
+      "valueFailures": 0
+    }
+  ]
+}
+=== Autofill hard-case training (24 scenarios) ===
+
+PASS  default-profile compliance + education
+PASS  empty salary falls back to default
+PASS  sponsorship required Yes
+PASS  consent traps ΓÇö must pick Yes not I do not consent
+PASS  discipline typeahead after loading
+PASS  salary range select matches JD midpoint
+PASS  work auth Yes separate from sponsorship No
+PASS  notice period free text
+PASS  school delayed typeahead
+PASS  degree synonym Bachelor of Science ΓåÆ Bachelor's Degree
+PASS  gender Male maps to Man
+PASS  previous employer defaults No
+PASS  over 18 default Yes
+PASS  relocate Yes
+PASS  how heard LinkedIn
+PASS  links linkedin + github
+PASS  YOE radios pick 10+
+PASS  terms checkbox checked
+PASS  high JD salary band 120-150
+PASS  salary-k select picks near JD
+PASS  reside city typeahead
+PASS  contact fields filled
+PASS  double-fill does not clear sponsorship
+PASS  sponsorship No + auth No profile still fills auth No
+
+=== 24 passed, 0 failed (24 scenarios) ===
+OK icims filled=8
+OK bamboohr filled=8
+OK generic filled=6
+OK dial_vs_residence filled=4
+OK linkedin_blocked ats=linkedin
+{
+  "failed": 0,
+  "passed": 5
+}
+
+> job-apply-master@1.0.0 test:edge
+> node extension/fixtures/test_more_edge_cases.js
+
+=== Edge unit checks ===
+PASS geetest token+challenge
+PASS perimeterx
+PASS im not a robot
+PASS access denied unusual traffic
+PASS bot detection
+PASS greenhouse mid-apply captcha
+PASS lever mid-apply captcha
+PASS ashby mid-apply captcha
+PASS workday mid-apply captcha
+PASS oracle mid-apply captcha
+PASS smartrecruiters mid-apply captcha
+PASS icims mid-apply captcha
+PASS bamboohr mid-apply captcha
+PASS thank you not captcha
+PASS sign in later on apply
+PASS login+widget both
+PASS cleared wall
+PASS success:Thank you for applying
+PASS success:Application submitted succes
+PASS success:We have received your applic
+PASS success:Confirmation of your applica
+PASS success:Thanks! Your application is 
+PASS success:First Name Email Phone
+PASS success:Please verify you are human
+PASS captcha poll default
+PASS captcha timeout 1h
+
+=== Edge DOM / fill-then-CAPTCHA ===
+(node:63980) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/lib/captchaPass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+DOM PASS next_button Continue
+DOM PASS success_page
+DOM PASS greenhouse/fill_then_captcha 
+DOM PASS greenhouse/captcha_cleared
+DOM PASS lever/fill_then_captcha 
+DOM PASS lever/captcha_cleared
+DOM PASS ashby/fill_then_captcha 
+DOM PASS ashby/captcha_cleared
+DOM PASS workday/fill_then_captcha 
+DOM PASS workday/captcha_cleared
+DOM PASS oracle/fill_then_captcha 
+DOM PASS oracle/captcha_cleared
+DOM PASS smartrecruiters/fill_then_captcha 
+DOM PASS smartrecruiters/captcha_cleared
+DOM PASS icims/fill_then_captcha 
+DOM PASS icims/captcha_cleared
+DOM PASS bamboohr/fill_then_captcha 
+DOM PASS bamboohr/captcha_cleared
+DOM PASS geetest_dom
+DOM PASS perimeterx_dom
+
+{
+  "unit": {
+    "failed": 0,
+    "passed": 26,
+    "total": 26
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 20,
+    "total": 20
+  }
+}
+
+> job-apply-master@1.0.0 test:captcha
+> node extension/fixtures/test_captcha_pass.js && node extension/fixtures/test_captcha_vendor_engineer.js && node extension/fixtures/test_captcha_all_platforms.js && node extension/fixtures/test_more_edge_cases.js && node extension/fixtures/test_unattended_captcha.js
+
+PASS recaptcha widget
+PASS cloudflare copy
+PASS turnstile token + challenge
+PASS arkose mentioned
+PASS normal apply form not captcha
+PASS login wall
+PASS apply form with sign-in word not login wall
+PASS oracle-ish human check
+PASS passive widget is captcha
+PASS passive widget NOT blocking when form ready
+PASS passive widget NOT blocking before form (keep polling)
+PASS cloudflare interstitial IS blocking
+PASS hard vendor without widget still blocks when formReady
+PASS hard vendor with on-form widget does not block fill
+PASS login wall IS blocking even with formReady
+
+All 15 captcha-pass checks passed.
+(node:54456) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_captcha_pass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS all vendors listed
+PASS catalog size
+PASS detect recaptcha
+PASS detect hcaptcha
+PASS detect turnstile
+PASS detect arkose
+PASS detect datadome
+PASS detect perimeterx
+PASS detect geetest
+PASS detect aws_waf
+PASS detect mtcaptcha
+PASS detect keycaptcha
+PASS detect friendly
+PASS detect lemin
+PASS detect cloudflare
+PASS recaptcha helper ON ΓåÆ wait
+PASS hcaptcha helper ON ΓåÆ wait
+PASS turnstile helper ON ΓåÆ wait
+PASS arkose helper ON ΓåÆ wait
+PASS datadome helper ON ΓåÆ wait
+PASS geetest helper ON ΓåÆ wait
+PASS aws_waf helper ON ΓåÆ wait
+PASS generic helper ON ΓåÆ wait
+PASS hcaptcha helper OFF ΓåÆ skip
+PASS arkose helper OFF ΓåÆ skip
+PASS login human
+PASS recommend recaptcha
+PASS recommend turnstile
+PASS label aws
+PASS classify turnstile
+
+All 30 captcha-vendor-engineer checks passed.
+(node:60068) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_captcha_vendor_engineer.js is not specified and it doesn't parse 
+as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+=== CAPTCHA unit matrix (all platforms ├ù variants) ===
+PASS greenhouse/clean_apply
+PASS greenhouse/recaptcha_widget
+PASS greenhouse/hcaptcha_widget
+PASS greenhouse/turnstile_widget
+PASS greenhouse/arkose_html
+PASS greenhouse/geetest_html
+PASS greenhouse/aws_waf_html
+PASS greenhouse/mtcaptcha_html
+PASS greenhouse/cloudflare_challenge_copy
+PASS greenhouse/datadome_copy
+PASS greenhouse/oracle_human_prove
+PASS greenhouse/login_wall
+PASS greenhouse/recaptcha_iframe
+PASS lever/clean_apply
+PASS lever/recaptcha_widget
+PASS lever/hcaptcha_widget
+PASS lever/turnstile_widget
+PASS lever/arkose_html
+PASS lever/geetest_html
+PASS lever/aws_waf_html
+PASS lever/mtcaptcha_html
+PASS lever/cloudflare_challenge_copy
+PASS lever/datadome_copy
+PASS lever/oracle_human_prove
+PASS lever/login_wall
+PASS lever/recaptcha_iframe
+PASS ashby/clean_apply
+PASS ashby/recaptcha_widget
+PASS ashby/hcaptcha_widget
+PASS ashby/turnstile_widget
+PASS ashby/arkose_html
+PASS ashby/geetest_html
+PASS ashby/aws_waf_html
+PASS ashby/mtcaptcha_html
+PASS ashby/cloudflare_challenge_copy
+PASS ashby/datadome_copy
+PASS ashby/oracle_human_prove
+PASS ashby/login_wall
+PASS ashby/recaptcha_iframe
+PASS workday/clean_apply
+PASS workday/recaptcha_widget
+PASS workday/hcaptcha_widget
+PASS workday/turnstile_widget
+PASS workday/arkose_html
+PASS workday/geetest_html
+PASS workday/aws_waf_html
+PASS workday/mtcaptcha_html
+PASS workday/cloudflare_challenge_copy
+PASS workday/datadome_copy
+PASS workday/oracle_human_prove
+PASS workday/login_wall
+PASS workday/recaptcha_iframe
+PASS oracle/clean_apply
+PASS oracle/recaptcha_widget
+PASS oracle/hcaptcha_widget
+PASS oracle/turnstile_widget
+PASS oracle/arkose_html
+PASS oracle/geetest_html
+PASS oracle/aws_waf_html
+PASS oracle/mtcaptcha_html
+PASS oracle/cloudflare_challenge_copy
+PASS oracle/datadome_copy
+PASS oracle/oracle_human_prove
+PASS oracle/login_wall
+PASS oracle/recaptcha_iframe
+PASS smartrecruiters/clean_apply
+PASS smartrecruiters/recaptcha_widget
+PASS smartrecruiters/hcaptcha_widget
+PASS smartrecruiters/turnstile_widget
+PASS smartrecruiters/arkose_html
+PASS smartrecruiters/geetest_html
+PASS smartrecruiters/aws_waf_html
+PASS smartrecruiters/mtcaptcha_html
+PASS smartrecruiters/cloudflare_challenge_copy
+PASS smartrecruiters/datadome_copy
+PASS smartrecruiters/oracle_human_prove
+PASS smartrecruiters/login_wall
+PASS smartrecruiters/recaptcha_iframe
+PASS icims/clean_apply
+PASS icims/recaptcha_widget
+PASS icims/hcaptcha_widget
+PASS icims/turnstile_widget
+PASS icims/arkose_html
+PASS icims/geetest_html
+PASS icims/aws_waf_html
+PASS icims/mtcaptcha_html
+PASS icims/cloudflare_challenge_copy
+PASS icims/datadome_copy
+PASS icims/oracle_human_prove
+PASS icims/login_wall
+PASS icims/recaptcha_iframe
+PASS bamboohr/clean_apply
+PASS bamboohr/recaptcha_widget
+PASS bamboohr/hcaptcha_widget
+PASS bamboohr/turnstile_widget
+PASS bamboohr/arkose_html
+PASS bamboohr/geetest_html
+PASS bamboohr/aws_waf_html
+PASS bamboohr/mtcaptcha_html
+PASS bamboohr/cloudflare_challenge_copy
+PASS bamboohr/datadome_copy
+PASS bamboohr/oracle_human_prove
+PASS bamboohr/login_wall
+PASS bamboohr/recaptcha_iframe
+PASS generic/clean_apply
+PASS generic/recaptcha_widget
+PASS generic/hcaptcha_widget
+PASS generic/turnstile_widget
+PASS generic/arkose_html
+PASS generic/geetest_html
+PASS generic/aws_waf_html
+PASS generic/mtcaptcha_html
+PASS generic/cloudflare_challenge_copy
+PASS generic/datadome_copy
+PASS generic/oracle_human_prove
+PASS generic/login_wall
+PASS generic/recaptcha_iframe
+PASS linkedin/clean_apply
+PASS linkedin/recaptcha_widget
+PASS linkedin/hcaptcha_widget
+PASS linkedin/turnstile_widget
+PASS linkedin/arkose_html
+PASS linkedin/geetest_html
+PASS linkedin/aws_waf_html
+PASS linkedin/mtcaptcha_html
+PASS linkedin/cloudflare_challenge_copy
+PASS linkedin/datadome_copy
+PASS linkedin/oracle_human_prove
+PASS linkedin/login_wall
+PASS linkedin/recaptcha_iframe
+
+=== CAPTCHA DOM matrix (widget selectors) ===
+(node:56388) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/lib/captchaPass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+DOM PASS greenhouse/clean_apply 
+DOM PASS greenhouse/recaptcha_widget 
+DOM PASS greenhouse/hcaptcha_widget 
+DOM PASS greenhouse/turnstile_widget 
+DOM PASS greenhouse/arkose_html 
+DOM PASS greenhouse/cloudflare_challenge_copy 
+DOM PASS greenhouse/datadome_copy 
+DOM PASS greenhouse/oracle_human_prove 
+DOM PASS greenhouse/login_wall 
+DOM PASS greenhouse/recaptcha_iframe 
+DOM PASS lever/clean_apply 
+DOM PASS lever/recaptcha_widget 
+DOM PASS lever/hcaptcha_widget 
+DOM PASS lever/turnstile_widget 
+DOM PASS lever/arkose_html 
+DOM PASS lever/cloudflare_challenge_copy 
+DOM PASS lever/datadome_copy 
+DOM PASS lever/oracle_human_prove 
+DOM PASS lever/login_wall 
+DOM PASS lever/recaptcha_iframe 
+DOM PASS ashby/clean_apply 
+DOM PASS ashby/recaptcha_widget 
+DOM PASS ashby/hcaptcha_widget 
+DOM PASS ashby/turnstile_widget 
+DOM PASS ashby/arkose_html 
+DOM PASS ashby/cloudflare_challenge_copy 
+DOM PASS ashby/datadome_copy 
+DOM PASS ashby/oracle_human_prove 
+DOM PASS ashby/login_wall 
+DOM PASS ashby/recaptcha_iframe 
+DOM PASS workday/clean_apply 
+DOM PASS workday/recaptcha_widget 
+DOM PASS workday/hcaptcha_widget 
+DOM PASS workday/turnstile_widget 
+DOM PASS workday/arkose_html 
+DOM PASS workday/cloudflare_challenge_copy 
+DOM PASS workday/datadome_copy 
+DOM PASS workday/oracle_human_prove 
+DOM PASS workday/login_wall 
+DOM PASS workday/recaptcha_iframe 
+DOM PASS oracle/clean_apply 
+DOM PASS oracle/recaptcha_widget 
+DOM PASS oracle/hcaptcha_widget 
+DOM PASS oracle/turnstile_widget 
+DOM PASS oracle/arkose_html 
+DOM PASS oracle/cloudflare_challenge_copy 
+DOM PASS oracle/datadome_copy 
+DOM PASS oracle/oracle_human_prove 
+DOM PASS oracle/login_wall 
+DOM PASS oracle/recaptcha_iframe 
+DOM PASS smartrecruiters/clean_apply 
+DOM PASS smartrecruiters/recaptcha_widget 
+DOM PASS smartrecruiters/hcaptcha_widget 
+DOM PASS smartrecruiters/turnstile_widget 
+DOM PASS smartrecruiters/arkose_html 
+DOM PASS smartrecruiters/cloudflare_challenge_copy 
+DOM PASS smartrecruiters/datadome_copy 
+DOM PASS smartrecruiters/oracle_human_prove 
+DOM PASS smartrecruiters/login_wall 
+DOM PASS smartrecruiters/recaptcha_iframe 
+DOM PASS icims/clean_apply 
+DOM PASS icims/recaptcha_widget 
+DOM PASS icims/hcaptcha_widget 
+DOM PASS icims/turnstile_widget 
+DOM PASS icims/arkose_html 
+DOM PASS icims/cloudflare_challenge_copy 
+DOM PASS icims/datadome_copy 
+DOM PASS icims/oracle_human_prove 
+DOM PASS icims/login_wall 
+DOM PASS icims/recaptcha_iframe 
+DOM PASS bamboohr/clean_apply 
+DOM PASS bamboohr/recaptcha_widget 
+DOM PASS bamboohr/hcaptcha_widget 
+DOM PASS bamboohr/turnstile_widget 
+DOM PASS bamboohr/arkose_html 
+DOM PASS bamboohr/cloudflare_challenge_copy 
+DOM PASS bamboohr/datadome_copy 
+DOM PASS bamboohr/oracle_human_prove 
+DOM PASS bamboohr/login_wall 
+DOM PASS bamboohr/recaptcha_iframe 
+DOM PASS generic/clean_apply 
+DOM PASS generic/recaptcha_widget 
+DOM PASS generic/hcaptcha_widget 
+DOM PASS generic/turnstile_widget 
+DOM PASS generic/arkose_html 
+DOM PASS generic/cloudflare_challenge_copy 
+DOM PASS generic/datadome_copy 
+DOM PASS generic/oracle_human_prove 
+DOM PASS generic/login_wall 
+DOM PASS generic/recaptcha_iframe 
+DOM PASS linkedin/clean_apply 
+DOM PASS linkedin/recaptcha_widget 
+DOM PASS linkedin/hcaptcha_widget 
+DOM PASS linkedin/turnstile_widget 
+DOM PASS linkedin/arkose_html 
+DOM PASS linkedin/cloudflare_challenge_copy 
+DOM PASS linkedin/datadome_copy 
+DOM PASS linkedin/oracle_human_prove 
+DOM PASS linkedin/login_wall 
+DOM PASS linkedin/recaptcha_iframe 
+
+{
+  "unit": {
+    "failed": 0,
+    "passed": 130,
+    "total": 130
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 100,
+    "total": 100
+  },
+  "platforms": [
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "oracle",
+    "smartrecruiters",
+    "icims",
+    "bamboohr",
+    "generic",
+    "linkedin"
+  ],
+  "variants": [
+    "clean_apply",
+    "recaptcha_widget",
+    "hcaptcha_widget",
+    "turnstile_widget",
+    "arkose_html",
+    "geetest_html",
+    "aws_waf_html",
+    "mtcaptcha_html",
+    "cloudflare_challenge_copy",
+    "datadome_copy",
+    "oracle_human_prove",
+    "login_wall",
+    "recaptcha_iframe"
+  ]
+}
+=== Edge unit checks ===
+PASS geetest token+challenge
+PASS perimeterx
+PASS im not a robot
+PASS access denied unusual traffic
+PASS bot detection
+PASS greenhouse mid-apply captcha
+PASS lever mid-apply captcha
+PASS ashby mid-apply captcha
+PASS workday mid-apply captcha
+PASS oracle mid-apply captcha
+PASS smartrecruiters mid-apply captcha
+PASS icims mid-apply captcha
+PASS bamboohr mid-apply captcha
+PASS thank you not captcha
+PASS sign in later on apply
+PASS login+widget both
+PASS cleared wall
+PASS success:Thank you for applying
+PASS success:Application submitted succes
+PASS success:We have received your applic
+PASS success:Confirmation of your applica
+PASS success:Thanks! Your application is 
+PASS success:First Name Email Phone
+PASS success:Please verify you are human
+PASS captcha poll default
+PASS captcha timeout 1h
+
+=== Edge DOM / fill-then-CAPTCHA ===
+(node:61904) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/lib/captchaPass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+DOM PASS next_button Continue
+DOM PASS success_page
+DOM PASS greenhouse/fill_then_captcha 
+DOM PASS greenhouse/captcha_cleared
+DOM PASS lever/fill_then_captcha 
+DOM PASS lever/captcha_cleared
+DOM PASS ashby/fill_then_captcha 
+DOM PASS ashby/captcha_cleared
+DOM PASS workday/fill_then_captcha 
+DOM PASS workday/captcha_cleared
+DOM PASS oracle/fill_then_captcha 
+DOM PASS oracle/captcha_cleared
+DOM PASS smartrecruiters/fill_then_captcha 
+DOM PASS smartrecruiters/captcha_cleared
+DOM PASS icims/fill_then_captcha 
+DOM PASS icims/captcha_cleared
+DOM PASS bamboohr/fill_then_captcha 
+DOM PASS bamboohr/captcha_cleared
+DOM PASS geetest_dom
+DOM PASS perimeterx_dom
+
+{
+  "unit": {
+    "failed": 0,
+    "passed": 26,
+    "total": 26
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 20,
+    "total": 20
+  }
+}
+PASS defaults unattended off
+PASS defaults grace 45s
+PASS defaults attended timeout 1h
+PASS unattended uses grace
+PASS unattended zero grace
+PASS attended long wait
+PASS attended focus off = no wait
+PASS abandon after grace
+PASS no abandon if cleared
+PASS no abandon attended
+PASS defaults helper off
+PASS defaults helper wait 3m
+PASS helper stretches grace to 3m
+PASS no helper keeps 45s
+
+All 14 unattended-captcha checks passed.
+(node:61364) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of 
+file:///E:/job-apply-master/extension/fixtures/test_unattended_captcha.js is not specified and it doesn't parse as 
+CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to E:\job-apply-master\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)

@@ -1,0 +1,321 @@
+{
+  "unit": {
+    "failed": 0,
+    "passed": 32,
+    "total": 32
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 20,
+    "total": 20
+  },
+  "unitChecks": [
+    [
+      "geetest token+challenge",
+      true
+    ],
+    [
+      "perimeterx",
+      true
+    ],
+    [
+      "im not a robot",
+      true
+    ],
+    [
+      "access denied unusual traffic",
+      true
+    ],
+    [
+      "bot detection",
+      true
+    ],
+    [
+      "greenhouse mid-apply captcha",
+      true
+    ],
+    [
+      "lever mid-apply captcha",
+      true
+    ],
+    [
+      "ashby mid-apply captcha",
+      true
+    ],
+    [
+      "workday mid-apply captcha",
+      true
+    ],
+    [
+      "oracle mid-apply captcha",
+      true
+    ],
+    [
+      "smartrecruiters mid-apply captcha",
+      true
+    ],
+    [
+      "icims mid-apply captcha",
+      true
+    ],
+    [
+      "bamboohr mid-apply captcha",
+      true
+    ],
+    [
+      "thank you not captcha",
+      true
+    ],
+    [
+      "sign in later on apply",
+      true
+    ],
+    [
+      "login+widget both",
+      true
+    ],
+    [
+      "cleared wall",
+      true
+    ],
+    [
+      "success:Thank you for applying",
+      true
+    ],
+    [
+      "success:Application submitted succes",
+      true
+    ],
+    [
+      "success:We have received your applic",
+      true
+    ],
+    [
+      "success:Confirmation of your applica",
+      true
+    ],
+    [
+      "success:Thanks for your application!",
+      true
+    ],
+    [
+      "success:First Name Email Phone",
+      true
+    ],
+    [
+      "success:Please verify you are human",
+      true
+    ],
+    [
+      "success:customer success or implemen",
+      true
+    ],
+    [
+      "success:How many years have you work",
+      true
+    ],
+    [
+      "success:successfully deploy to produ",
+      true
+    ],
+    [
+      "success:Missing entry for required f",
+      true
+    ],
+    [
+      "success:Success!",
+      true
+    ],
+    [
+      "success:Thanks!",
+      true
+    ],
+    [
+      "captcha poll default",
+      true
+    ],
+    [
+      "captcha timeout 1h",
+      true
+    ]
+  ],
+  "domRows": [
+    {
+      "name": "next_button_prefers_continue",
+      "ok": true,
+      "picked": "Continue"
+    },
+    {
+      "name": "success_page",
+      "ok": true,
+      "wall": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "greenhouse/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "greenhouse/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "lever/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "lever/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "ashby/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "ashby/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "workday/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "workday/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "oracle/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "oracle/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "smartrecruiters/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "smartrecruiters/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "icims/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "icims/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "bamboohr/fill_then_captcha",
+      "ok": true,
+      "after": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "bamboohr/captcha_cleared",
+      "ok": true,
+      "cleared": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false
+      }
+    },
+    {
+      "name": "geetest_dom",
+      "ok": true,
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    },
+    {
+      "name": "perimeterx_dom",
+      "ok": true,
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true
+      }
+    }
+  ]
+}

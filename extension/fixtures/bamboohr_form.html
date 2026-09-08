@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>BambooHR fixture</title></head>
+<body>
+  <div class="BambooHR-ATS-board">
+    <form id="bhrApplicantForm">
+      <div>
+        <label for="bh-first">First Name *</label>
+        <input id="bh-first" name="firstName" type="text" />
+      </div>
+      <div>
+        <label for="bh-last">Last Name *</label>
+        <input id="bh-last" name="lastName" type="text" />
+      </div>
+      <div>
+        <label for="bh-email">Email *</label>
+        <input id="bh-email" name="email" type="email" />
+      </div>
+      <div>
+        <label for="bh-phone">Phone Number *</label>
+        <input id="bh-phone" name="phone" type="tel" />
+      </div>
+      <div>
+        <label for="bh-city">City *</label>
+        <input id="bh-city" name="city" type="text" />
+      </div>
+      <div>
+        <label for="bh-country">Country *</label>
+        <select id="bh-country" name="country">
+          <option value="">Select</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+        </select>
+      </div>
+      <div>
+        <label for="bh-li">LinkedIn Profile</label>
+        <input id="bh-li" name="linkedin" type="text" />
+      </div>
+      <div>
+        <label for="bh-auth">Are you authorized to work in the United States? *</label>
+        <select id="bh-auth" name="workauth">
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <button type="submit">Apply</button>
+    </form>
+  </div>
+</body>
+</html>

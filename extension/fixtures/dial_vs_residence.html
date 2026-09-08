@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Dial vs residence country regression</title></head>
+<body>
+  <!-- Residence country is a native select with id=country (common on Workday-like / kitchen sinks).
+       Must NOT be treated as Greenhouse phone dial-code. -->
+  <form id="application_form" data-provider="Greenhouse">
+    <div class="field">
+      <label for="first">First Name *</label>
+      <input id="first" name="first_name" type="text" />
+    </div>
+    <div class="field">
+      <label for="phone">Phone *</label>
+      <input id="phone" name="phone" type="tel" />
+    </div>
+    <div class="field">
+      <label for="country">Country *</label>
+      <select id="country" name="country">
+        <option value="">Select</option>
+        <option value="US">United States</option>
+        <option value="CA">Canada</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="email">Email *</label>
+      <input id="email" name="email" type="email" />
+    </div>
+    <button type="submit">Submit</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lumi</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="hdr">
+    <div class="brand">
+      <img src="icons/icon48.png" alt="" class="brand-icon" width="24" height="24" />
+      <span>Lumi</span>
+    </div>
+    <div id="statusPill" class="pill muted">…</div>
+  </header>
+
+  <section id="viewLogin" class="panel hidden">
+    <label class="label">API base URL</label>
+    <input id="apiBaseUrl" class="input" type="url" placeholder="http://127.0.0.1:9017" />
+    <label class="label">App (frontend) URL</label>
+    <input id="frontendBaseUrl" class="input" type="url" placeholder="http://127.0.0.1:5173" />
+    <p class="hint">Hotkey opens this app’s Generate page so you can watch CV progress.</p>
+
+    <label class="label">Username</label>
+    <input id="username" class="input" type="text" autocomplete="username" />
+
+    <label class="label">Password</label>
+    <input id="password" class="input" type="password" autocomplete="current-password" />
+
+    <button id="btnLogin" class="btn primary">Log in to app</button>
+    <p id="loginError" class="error"></p>
+  </section>
+
+  <section id="viewMain" class="panel hidden">
+    <div class="row between">
+      <div>
+        <div class="muted small">Signed in as</div>
+        <div id="userName" class="strong"></div>
+      </div>
+      <button id="btnLogout" class="btn ghost">Log out</button>
+    </div>
+
+    <label class="label">Bid profile</label>
+    <select id="profileSelect" class="input"></select>
+    <p class="hint">Saved for hotkeys until you change it.</p>
+
+    <div class="actions">
+      <button id="btnSaveProfile" class="btn primary">Save profile</button>
+      <button id="btnGenerate" class="btn secondary">1. Generate CV</button>
+    </div>
+    <button id="btnFill" class="btn primary full">2. Autofill (profile)</button>
+    <button id="btnAnswerQs" class="btn secondary full">3. Answer questions</button>
+    <button id="btnMarkApplied" class="btn ghost full">Mark last app as applied</button>
+
+    <label class="check-row">
+      <input type="checkbox" id="autoSubmit" />
+      <span>Autofill: optional auto-Submit (off by default)</span>
+    </label>
+
+    <div class="hotkey">
+      <div><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> pick JD</div>
+      <div><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> generate CV first</div>
+      <div><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> select questions</div>
+      <div><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> Autofill profile (no AI)</div>
+      <div class="muted small">Then click <b>Answer questions</b> on the apply page (AI fills selected fields)</div>
+      <div class="muted small">v1.9.4 — Autofill Engineer v3 (multi-ATS)</div>
+    </div>
+
+    <div id="monitorBox" class="last">
+      <div class="label">Lumi · engine v1 (Greenhouse)</div>
+      <div id="monitorSummary" class="small muted">Loading…</div>
+      <p class="hint">AFK / CAPTCHA keys: Settings in app</p>
+      <button id="btnOpenLumiSettings" class="btn secondary full">Open Lumi Settings</button>
+      <div id="readyList" class="ready-list"></div>
+      <button id="btnConnectJobLinks" class="btn secondary full">Connect Job Links tab</button>
+      <button id="btnProcessQueue" class="btn primary full">Process ready queue</button>
+      <button id="btnCaptchaResume" class="btn secondary full">CAPTCHA solved — Resume</button>
+      <button id="btnBidderNext" class="btn secondary full">Next</button>
+      <button id="btnSubmittedOk" class="btn secondary full">Submitted OK</button>
+      <button id="btnBidderStop" class="btn ghost full">Stop queue</button>
+      <button id="btnRefreshReady" class="btn ghost full">Refresh ready queue</button>
+      <button id="btnOpenCourses" class="btn ghost full">Open Bid Courses</button>
+    </div>
+
+    <div id="lastBox" class="last hidden">
+      <div class="label">Last result</div>
+      <div id="lastSummary" class="small"></div>
+      <a id="lastDownload" class="link hidden" href="#" target="_blank" rel="noreferrer">Download resume</a>
+    </div>
+
+    <p id="mainError" class="error"></p>
+    <p id="mainOk" class="ok"></p>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

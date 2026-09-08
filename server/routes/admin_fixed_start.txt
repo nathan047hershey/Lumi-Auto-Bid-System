@@ -1,0 +1,12 @@
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const { getAll, getOne, runQuery, txRunQuery, getDb, saveDatabase, LOCATION_FLAGS, detectLocationFlag } = require('../config/database');
+const jobMatchService = require('../services/jobMatchService');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { localPickerToUTCIso } = require('../utils/time');
+const { buildStatsResponse } = require('../services/statsService');
+const settingsService = require('../services/settingsService');
+const {
+    // Used by the legacy GET /applications list endpoint to decorate
+    // each row with the latest milestone (without an N+1).

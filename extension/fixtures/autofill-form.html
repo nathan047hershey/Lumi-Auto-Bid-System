@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Autofill Course Fixture</title>
+  <style>
+    body { font-family: system-ui; max-width: 640px; margin: 2rem auto; }
+    label { display: block; margin-top: 0.75rem; font-weight: 600; }
+    input, textarea, select { width: 100%; padding: 0.4rem; margin-top: 0.25rem; }
+  </style>
+</head>
+<body>
+  <h1>Acme Software Engineer Application</h1>
+  <p>Compensation: $140,000 - $180,000 USD. React and Node experience required.</p>
+  <form id="application_form">
+    <label for="first_name">First Name</label>
+    <input id="first_name" name="job_application[first_name]" type="text" />
+
+    <label for="last_name">Last Name</label>
+    <input id="last_name" name="job_application[last_name]" type="text" />
+
+    <label for="email">Email</label>
+    <input id="email" name="job_application[email]" type="email" />
+
+    <label for="phone">Phone</label>
+    <input id="phone" name="job_application[phone]" type="tel" />
+
+    <label for="linkedin">LinkedIn Profile</label>
+    <input id="linkedin" name="job_application[linkedin]" type="url" />
+
+    <label for="salary">Expected salary / compensation</label>
+    <input id="salary" name="job_application[salary]" type="text" />
+
+    <label for="why">Why do you want this role?</label>
+    <textarea id="why" name="job_application[why]" rows="4"></textarea>
+
+    <label for="auth">Are you authorized to work in the US?</label>
+    <input id="auth" name="job_application[work_auth]" type="text" />
+
+    <label for="gender">Gender</label>
+    <select id="gender" name="job_application[gender]">
+      <option value="">Select</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+      <option value="Prefer not to say">Prefer not to say</option>
+    </select>
+
+    <label for="sponsor">Will you now or in the future require visa sponsorship?</label>
+    <select id="sponsor" name="job_application[sponsorship]">
+      <option value="">Select</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+
+    <label for="resume">Resume / CV</label>
+    <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx" />
+
+    <button type="submit">Submit application</button>
+  </form>
+</body>
+</html>

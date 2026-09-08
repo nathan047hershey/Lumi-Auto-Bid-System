@@ -1,0 +1,536 @@
+{
+  "at": "2026-09-07T03:40:10.914Z",
+  "profile": {
+    "first_name": "Alex",
+    "last_name": "Testuser",
+    "email": "alex.testuser@example.com",
+    "phone": "(555) 010-9999",
+    "city": "Palo Alto",
+    "state": "CA",
+    "country": "United States",
+    "linkedin_url": "https://www.linkedin.com/in/alex-testuser",
+    "github_url": "https://github.com/example-user",
+    "website_url": "",
+    "school": "Virginia Tech",
+    "degree": "Bachelor of Science",
+    "discipline": "Computer Science",
+    "years_of_experience": "18",
+    "work_authorization": "Yes",
+    "requires_sponsorship": "No",
+    "salary_range": "180000"
+  },
+  "report": [
+    {
+      "name": "lever",
+      "ats": "lever",
+      "fields": [
+        {
+          "label": "Full name *",
+          "kind": "full_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email *",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Phone *",
+          "kind": "phone",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Current company",
+          "kind": "question",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "LinkedIn URL",
+          "kind": "linkedin",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "GitHub URL",
+          "kind": "github",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Location (City) *",
+          "kind": "city",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Are you legally authorized to work in the United States? *",
+          "kind": "work_authorization",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Will you now or in the future require sponsorship? *",
+          "kind": "requires_sponsorship",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "What is your desired salary? *",
+          "kind": "salary",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "How many years of professional experience do you have? *",
+          "kind": "years_of_experience",
+          "type": "radio",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 11,
+      "ok": true,
+      "dom": {
+        "name": "Alex Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "linkedin": "https://www.linkedin.com/in/alex-testuser",
+        "github": "https://github.com/example-user",
+        "city": "Palo Alto, CA",
+        "workauth": "Yes",
+        "sponsor": "No",
+        "yoe": "10p",
+        "salary": "$79,000"
+      }
+    },
+    {
+      "name": "ashby",
+      "ats": "ashby",
+      "fields": [
+        {
+          "label": "First Name *",
+          "kind": "first_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Last Name *",
+          "kind": "last_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email *",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Phone Number *",
+          "kind": "phone",
+          "type": "tel",
+          "combobox": false
+        },
+        {
+          "label": "City *",
+          "kind": "city",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "LinkedIn Profile",
+          "kind": "linkedin",
+          "type": "url",
+          "combobox": false
+        },
+        {
+          "label": "GitHub / Portfolio URL",
+          "kind": "github",
+          "type": "url",
+          "combobox": false
+        },
+        {
+          "label": "Are you authorized to work in the United States? *",
+          "kind": "work_authorization",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Do you require visa sponsorship? *",
+          "kind": "requires_sponsorship",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Desired salary *",
+          "kind": "salary",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Years of experience as a software engineer *",
+          "kind": "years_of_experience",
+          "type": "radio",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 11,
+      "ok": true,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "linkedin": "https://www.linkedin.com/in/alex-testuser",
+        "github": "https://github.com/example-user",
+        "auth": "Yes",
+        "sponsor": "No",
+        "yoe": "10+",
+        "salary": "$79,000"
+      }
+    },
+    {
+      "name": "workday",
+      "ats": "workday",
+      "fields": [
+        {
+          "label": "First Name",
+          "kind": "first_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Last Name",
+          "kind": "last_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email Address",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Phone Number",
+          "kind": "phone",
+          "type": "tel",
+          "combobox": false
+        },
+        {
+          "label": "City",
+          "kind": "city",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Country",
+          "kind": "country",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Are you legally authorized to work in the country where this job is located?",
+          "kind": "work_authorization",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Will you now or in the future require sponsorship for employment visa status?",
+          "kind": "requires_sponsorship",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "LinkedIn",
+          "kind": "linkedin",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Website / Portfolio / GitHub",
+          "kind": "github",
+          "type": "text",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 10,
+      "ok": true,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "auth": "Yes",
+        "sponsor": "No",
+        "linkedin": "https://www.linkedin.com/in/alex-testuser",
+        "web": "https://github.com/example-user"
+      }
+    },
+    {
+      "name": "smartrecruiters",
+      "ats": "smartrecruiters",
+      "fields": [
+        {
+          "label": "First name *",
+          "kind": "first_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Last name *",
+          "kind": "last_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email *",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Phone *",
+          "kind": "phone",
+          "type": "tel",
+          "combobox": false
+        },
+        {
+          "label": "City *",
+          "kind": "city",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Country *",
+          "kind": "country",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "LinkedIn profile",
+          "kind": "linkedin",
+          "type": "url",
+          "combobox": false
+        },
+        {
+          "label": "Are you eligible to work in this country? *",
+          "kind": "work_authorization",
+          "type": "select-one",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 8,
+      "ok": true,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "linkedin": "https://www.linkedin.com/in/alex-testuser",
+        "auth": "Yes"
+      }
+    },
+    {
+      "name": "oracle",
+      "ats": "oracle",
+      "fields": [
+        {
+          "label": "First Name *",
+          "kind": "first_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Last Name *",
+          "kind": "last_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email *",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Phone *",
+          "kind": "phone",
+          "type": "tel",
+          "combobox": false
+        },
+        {
+          "label": "City *",
+          "kind": "city",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Country *",
+          "kind": "country",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "LinkedIn Profile",
+          "kind": "linkedin",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Are you legally authorized to work in the United States? *",
+          "kind": "work_authorization",
+          "type": "select-one",
+          "combobox": false
+        },
+        {
+          "label": "Will you now or in the future require sponsorship? *",
+          "kind": "requires_sponsorship",
+          "type": "select-one",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 9,
+      "ok": true,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "li": "https://www.linkedin.com/in/alex-testuser",
+        "auth": "Yes",
+        "sponsor": "No"
+      }
+    },
+    {
+      "name": "greenhouse_detailed",
+      "ats": "greenhouse",
+      "fields": [
+        {
+          "label": "First Name *",
+          "kind": "first_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Last Name *",
+          "kind": "last_name",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "Email *",
+          "kind": "email",
+          "type": "email",
+          "combobox": false
+        },
+        {
+          "label": "Country *",
+          "kind": "country",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "School",
+          "kind": "school",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "Degree",
+          "kind": "degree",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "Discipline",
+          "kind": "discipline",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "Where do you currently reside? *",
+          "kind": "city",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "Are you able to work remotely and maintain a work environment that is free from distractions? *",
+          "kind": "work_authorization",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "If you reside in a US state where we have a legal entity, will you consistently be working from this state while employed in this role? *",
+          "kind": "work_authorization",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "Please provide a URL to your GitHub, public portfolio. *",
+          "kind": "github",
+          "type": "textarea",
+          "combobox": false
+        },
+        {
+          "label": "Have you ever worked at CIAT? *",
+          "kind": "previous_employer_no",
+          "type": "text",
+          "combobox": true
+        },
+        {
+          "label": "What is your desired salary? *",
+          "kind": "salary",
+          "type": "text",
+          "combobox": false
+        },
+        {
+          "label": "How many years of professional experience do you have as a full stack web developer (front end + back end)? *",
+          "kind": "years_of_experience",
+          "type": "radio",
+          "combobox": false
+        }
+      ],
+      "kindFailures": [],
+      "valueFailures": [],
+      "filled": 14,
+      "ok": true,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "country": "United States",
+        "school": "Virginia Tech",
+        "degree": "Bachelor's Degree",
+        "discipline": "Computer Science",
+        "reside": "Somewhere else",
+        "remote": "Yes",
+        "stwork": "Yes",
+        "yoe": "10p",
+        "github": "https://github.com/example-user",
+        "ciat": "No",
+        "salary": "$79,000"
+      }
+    }
+  ]
+}

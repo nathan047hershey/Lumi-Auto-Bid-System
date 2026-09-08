@@ -1,0 +1,18 @@
+import sys, json, requests
+url = "https://thatch.com/jobs/software-engineer-backend-5113759008"
+r = requests.post("http://127.0.0.1:8765/scrape", json={"url": url, "timeoutMs": 30000}, timeout=45)
+data = r.json()
+print("Keys:", list(data.keys()))
+print("Title:", data.get("position_title"))
+print("Company:", data.get("company_name"))
+print("Location:", data.get("location"))
+print("Desc length:", len(data.get("description") or ""))
+print()
+print("--- DESC START (first 800 chars) ---")
+print((data.get("description") or "")[:800])
+print()
+print("--- DESC AROUND 3500-5000 (form area) ---")
+print((data.get("description") or "")[3500:5000])
+print()
+print("--- DESC END (last 1500 chars) ---")
+print((data.get("description") or "")[-1500:])

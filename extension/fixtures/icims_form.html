@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>iCIMS fixture</title></head>
+<body>
+  <div class="iCIMS_Forms">
+    <form id="icims_form">
+      <div>
+        <label for="ic-first">First Name *</label>
+        <input id="ic-first" name="firstname" type="text" />
+      </div>
+      <div>
+        <label for="ic-last">Last Name *</label>
+        <input id="ic-last" name="lastname" type="text" />
+      </div>
+      <div>
+        <label for="ic-email">Email Address *</label>
+        <input id="ic-email" name="email" type="email" />
+      </div>
+      <div>
+        <label for="ic-phone">Phone *</label>
+        <input id="ic-phone" name="phone" type="tel" />
+      </div>
+      <div>
+        <label for="ic-city">City *</label>
+        <input id="ic-city" name="city" type="text" />
+      </div>
+      <div>
+        <label for="ic-li">LinkedIn URL</label>
+        <input id="ic-li" name="linkedin" type="text" />
+      </div>
+      <div>
+        <label for="ic-auth">Are you legally authorized to work in the United States? *</label>
+        <select id="ic-auth" name="workauth">
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div>
+        <label for="ic-sponsor">Will you require sponsorship now or in the future? *</label>
+        <select id="ic-sponsor" name="sponsor">
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <button type="submit">Submit</button>
+    </form>
+  </div>
+</body>
+</html>

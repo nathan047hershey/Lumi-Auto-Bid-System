@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Lever fixture</title></head>
+<body>
+  <form class="application-form" id="application-form">
+    <div class="application-question">
+      <label for="name">Full name *</label>
+      <input id="name" name="name" type="text" />
+    </div>
+    <div class="application-question">
+      <label for="email">Email *</label>
+      <input id="email" name="email" type="email" />
+    </div>
+    <div class="application-question">
+      <label for="phone">Phone *</label>
+      <input id="phone" name="phone" type="text" />
+    </div>
+    <div class="application-question">
+      <label for="org">Current company</label>
+      <input id="org" name="org" type="text" />
+    </div>
+    <div class="application-question">
+      <label for="linkedin">LinkedIn URL</label>
+      <input id="linkedin" name="urls[LinkedIn]" type="text" />
+    </div>
+    <div class="application-question">
+      <label for="github">GitHub URL</label>
+      <input id="github" name="urls[GitHub]" type="text" />
+    </div>
+    <div class="application-question">
+      <label for="loc">Location (City) *</label>
+      <input id="loc" name="location" type="text" />
+    </div>
+    <div class="application-question">
+      <label>Are you legally authorized to work in the United States? *</label>
+      <select id="workauth" name="cards[work_auth]">
+        <option value="">Select…</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+    <div class="application-question">
+      <label>Will you now or in the future require sponsorship? *</label>
+      <select id="sponsor" name="cards[sponsor]">
+        <option value="">Select…</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+    <div class="application-question">
+      <label>How many years of professional experience do you have? *</label>
+      <label><input type="radio" name="yoe" value="lt5"> Less than 5 years</label>
+      <label><input type="radio" name="yoe" value="5-6"> 5-6 years</label>
+      <label><input type="radio" name="yoe" value="7-10"> 7-10 years</label>
+      <label><input type="radio" name="yoe" value="10p"> 10+ years</label>
+    </div>
+    <div class="application-question">
+      <label for="salary">What is your desired salary? *</label>
+      <input id="salary" name="salary" type="text" />
+    </div>
+    <button type="submit" data-qa="btn-submit">Submit application</button>
+  </form>
+</body>
+</html>

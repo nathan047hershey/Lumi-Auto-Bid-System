@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Oracle Cloud HCM fixture</title></head>
+<body>
+  <div class="apply-flow-page" data-automation-id="oracleApplyFlow">
+    <form class="job-application-form" action="https://fa.us8.oraclecloud.com/hcmUI/CandidateExperience/apply" method="post">
+      <div>
+        <label for="ora-first">First Name *</label>
+        <input id="ora-first" name="candidateFirstName" type="text" />
+      </div>
+      <div>
+        <label for="ora-last">Last Name *</label>
+        <input id="ora-last" name="candidateLastName" type="text" />
+      </div>
+      <div>
+        <label for="ora-email">Email *</label>
+        <input id="ora-email" name="candidateEmail" type="email" />
+      </div>
+      <div>
+        <label for="ora-phone">Phone *</label>
+        <input id="ora-phone" name="candidatePhone" type="tel" />
+      </div>
+      <div>
+        <label for="ora-city">City *</label>
+        <input id="ora-city" name="candidateCity" type="text" />
+      </div>
+      <div>
+        <label for="ora-country">Country *</label>
+        <select id="ora-country" name="candidateCountry">
+          <option value="">Select…</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+        </select>
+      </div>
+      <div>
+        <label for="ora-li">LinkedIn Profile</label>
+        <input id="ora-li" name="candidateLinkedIn" type="text" />
+      </div>
+      <div>
+        <label for="ora-auth">Are you legally authorized to work in the United States? *</label>
+        <select id="ora-auth" name="candidateWorkAuth">
+          <option value="">Select…</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <div>
+        <label for="ora-sponsor">Will you now or in the future require sponsorship? *</label>
+        <select id="ora-sponsor" name="candidateSponsorship">
+          <option value="">Select…</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </div>
+      <button type="submit">Submit Application</button>
+    </form>
+  </div>
+</body>
+</html>

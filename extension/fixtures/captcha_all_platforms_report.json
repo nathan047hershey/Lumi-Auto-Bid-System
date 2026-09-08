@@ -1,0 +1,3234 @@
+{
+  "unit": {
+    "failed": 0,
+    "passed": 130,
+    "total": 130
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 100,
+    "total": 100
+  },
+  "platforms": [
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "oracle",
+    "smartrecruiters",
+    "icims",
+    "bamboohr",
+    "generic",
+    "linkedin"
+  ],
+  "variants": [
+    "clean_apply",
+    "recaptcha_widget",
+    "hcaptcha_widget",
+    "turnstile_widget",
+    "arkose_html",
+    "geetest_html",
+    "aws_waf_html",
+    "mtcaptcha_html",
+    "cloudflare_challenge_copy",
+    "datadome_copy",
+    "oracle_human_prove",
+    "login_wall",
+    "recaptcha_iframe"
+  ],
+  "unitRows": [
+    {
+      "platform": "greenhouse",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "geetest_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "aws_waf_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "mtcaptcha_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false
+      }
+    }
+  ],
+  "domRows": [
+    {
+      "platform": "greenhouse",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "greenhouse",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "lever",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "ashby",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "workday",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "oracle",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "smartrecruiters",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "icims",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "bamboohr",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "generic",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "clean_apply",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": false
+      },
+      "got": {
+        "captcha": false,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "recaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "hcaptcha_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "turnstile_widget",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "arkose_html",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "cloudflare_challenge_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "datadome_copy",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "oracle_human_prove",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": false,
+        "challengeCopy": true
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "login_wall",
+      "ok": true,
+      "expect": {
+        "captcha": false,
+        "login": true
+      },
+      "got": {
+        "captcha": false,
+        "login": true,
+        "widgetHit": false,
+        "challengeCopy": false
+      }
+    },
+    {
+      "platform": "linkedin",
+      "variant": "recaptcha_iframe",
+      "ok": true,
+      "expect": {
+        "captcha": true,
+        "login": false
+      },
+      "got": {
+        "captcha": true,
+        "login": false,
+        "widgetHit": true,
+        "challengeCopy": false
+      }
+    }
+  ]
+}

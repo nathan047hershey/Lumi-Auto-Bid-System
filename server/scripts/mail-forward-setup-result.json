@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "webhook_url": "https://crystal-daily-merchants-programming.trycloudflare.com/api/hooks/inbound-mail?token=9e9b61e5acc19defb631c8779fade59dfe240e66f6391791",
+  "receive_count": 3,
+  "last_used_at": "2026-09-05T15:54:24.307Z",
+  "probePublic": {
+    "status": 200,
+    "data": {
+      "ok": true,
+      "user_id": 1,
+      "otp_code": "445566",
+      "subject": "Lumi setup probe — security code",
+      "graph_id": "fwd:c058a6a8ec691c36b021f9bd8288270e1410c5d3"
+    }
+  },
+  "next": [
+    "Power Automate: create flow “When a new email arrives (Outlook.com)” → HTTP POST JSON {subject,text,from} to webhook_url",
+    "Or set OUTLOOK_IMAP_USER + OUTLOOK_IMAP_PASS (app password) and run: node server/scripts/outlookImapBridge.js"
+  ]
+}

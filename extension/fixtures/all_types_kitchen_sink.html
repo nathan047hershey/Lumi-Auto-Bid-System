@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>All answer types — multi ATS kitchen sink</title>
+<style>
+  body { font-family: system-ui; max-width: 720px; margin: 24px auto; }
+  .field, .form-group, .application-question, .ashby-application-form-field-entry { margin: 12px 0; }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .select__control { border: 1px solid #94a3b8; padding: 4px 8px; min-height: 34px; width: 300px; }
+  .select__menu { border: 1px solid #ccc; background: #fff; }
+  .select__option { padding: 6px 10px; cursor: pointer; }
+  .select__option:hover { background: #dbeafe; }
+  h2 { margin-top: 28px; border-bottom: 1px solid #e2e8f0; }
+</style>
+</head>
+<body>
+<!-- data-ats set by test runner via URL hash or body attribute -->
+<form id="root_form" class="kitchen-form">
+  <div id="ashby_embed">
+  <h2>Contact</h2>
+  <div class="field form-group application-question ashby-application-form-field-entry">
+    <label for="first">First Name *</label>
+    <input id="first" name="firstName" type="text" data-automation-id="legalNameSection--firstName" />
+  </div>
+  <div class="field form-group application-question ashby-application-form-field-entry">
+    <label for="last">Last Name *</label>
+    <input id="last" name="lastName" type="text" data-automation-id="legalNameSection--lastName" />
+  </div>
+  <div class="field form-group">
+    <label for="full">Full name</label>
+    <input id="full" name="name" type="text" />
+  </div>
+  <div class="field form-group">
+    <label for="email">Email *</label>
+    <input id="email" name="email" type="email" data-automation-id="email" />
+  </div>
+  <div class="field form-group">
+    <label for="phone">Phone *</label>
+    <input id="phone" name="phone" type="tel" data-automation-id="phone" />
+  </div>
+  <div class="field form-group">
+    <label for="pref">Preferred name</label>
+    <input id="pref" name="preferred" type="text" />
+  </div>
+
+  <h2>Location</h2>
+  <div class="field form-group">
+    <label for="city">City *</label>
+    <input id="city" name="city" type="text" data-automation-id="addressSection_city" />
+  </div>
+  <div class="field form-group">
+    <label for="state">State / Province</label>
+    <select id="state" name="state">
+      <option value="">Select</option>
+      <option value="CA">California</option>
+      <option value="NY">New York</option>
+      <option value="TX">Texas</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label for="country">Country *</label>
+    <select id="country" name="country" data-automation-id="countryDropdown">
+      <option value="">Select</option>
+      <option value="US">United States</option>
+      <option value="CA">Canada</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label for="zip">Postal / Zip code</label>
+    <input id="zip" name="zip" type="text" />
+  </div>
+  <div class="field form-group">
+    <label for="addr">Street address</label>
+    <input id="addr" name="address" type="text" />
+  </div>
+
+  <h2>Links</h2>
+  <div class="field form-group">
+    <label for="li">LinkedIn Profile</label>
+    <input id="li" name="linkedin" type="url" data-automation-id="linkedin" />
+  </div>
+  <div class="field form-group">
+    <label for="gh">GitHub / public portfolio URL</label>
+    <input id="gh" name="github" type="url" data-automation-id="website" />
+  </div>
+  <div class="field form-group">
+    <label for="web">Personal website</label>
+    <input id="web" name="website" type="url" />
+  </div>
+
+  <h2>Education</h2>
+  <div class="field">
+    <label>School</label>
+    <div class="select__control"><input class="select__input" id="school" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="school-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="school-menu" hidden>
+      <div class="select__option" role="option">Virginia Tech</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Degree</label>
+    <div class="select__control"><input class="select__input" id="degree" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="degree-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="degree-menu" hidden>
+      <div class="select__option" role="option">Bachelor's Degree</div>
+      <div class="select__option" role="option">Master's Degree</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Discipline</label>
+    <div class="select__control"><input class="select__input" id="disc" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="disc-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="disc-menu" hidden>
+      <div class="select__option" role="option">Computer Science</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+  <div class="field form-group">
+    <label for="edulevel">Highest education level</label>
+    <select id="edulevel" name="eduLevel">
+      <option value="">Select</option>
+      <option value="bachelors">Bachelor's</option>
+      <option value="masters">Master's</option>
+    </select>
+  </div>
+
+  <h2>Compliance / Yes-No</h2>
+  <div class="field form-group">
+    <label for="auth">Are you legally authorized to work in the United States? *</label>
+    <select id="auth" name="workAuth">
+      <option value="">Select</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label for="sponsor">Will you require visa sponsorship? *</label>
+    <select id="sponsor" name="sponsor">
+      <option value="">Select</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Are you able to work remotely and free from distractions? *</label>
+    <div class="select__control"><input class="select__input" id="remote" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="remote-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="remote-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Will you consistently be working from this state while employed in this role? *</label>
+    <div class="select__control"><input class="select__input" id="stwork" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="stwork-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="stwork-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Have you ever worked at Acme Corp? *</label>
+    <div class="select__control"><input class="select__input" id="prev" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="prev-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="prev-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field form-group">
+    <label for="over18">Are you 18 or older? *</label>
+    <select id="over18" name="over18">
+      <option value="">Select</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label for="relocate">Are you willing to relocate? *</label>
+    <select id="relocate" name="relocate">
+      <option value="">Select</option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label><input type="checkbox" id="cb-auth" name="cbAuth" /> I am authorized to work in the US</label>
+  </div>
+
+  <h2>EEO / profile fixed</h2>
+  <div class="field form-group">
+    <label for="gender">Gender</label>
+    <select id="gender" name="gender">
+      <option value="">Select</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+      <option value="Decline">Decline to self-identify</option>
+    </select>
+  </div>
+  <div class="field form-group">
+    <label for="heard">How did you hear about this position?</label>
+    <select id="heard" name="heard">
+      <option value="">Select</option>
+      <option value="LinkedIn">LinkedIn</option>
+      <option value="Indeed">Indeed</option>
+      <option value="Referral">Referral</option>
+    </select>
+  </div>
+
+  <h2>Experience / salary</h2>
+  <div class="field form-group ashby-application-form-field-entry">
+    <label>How many years of professional experience do you have as a full stack web developer? *</label>
+    <label><input type="radio" name="yoe" value="lt5" style="opacity:0"> Less than 5 years</label>
+    <label><input type="radio" name="yoe" value="5-6" style="opacity:0"> 5-6 years</label>
+    <label><input type="radio" name="yoe" value="7-10" style="opacity:0"> 7-10 years</label>
+    <label><input type="radio" name="yoe" value="10p" style="opacity:0"> 10+ years</label>
+  </div>
+  <div class="field form-group">
+    <label for="salary">What is your desired salary? *</label>
+    <input id="salary" name="salary" type="text" />
+  </div>
+  <div class="field form-group">
+    <label for="start">Earliest start date</label>
+    <input id="start" name="start" type="text" />
+  </div>
+  <div class="field form-group">
+    <label for="notice">Notice period</label>
+    <input id="notice" name="notice" type="text" />
+  </div>
+
+  <h2>Written AI questions</h2>
+  <div class="field form-group">
+    <label for="q-why">Why are you interested in this role? *</label>
+    <textarea id="q-why" name="why" rows="3"></textarea>
+  </div>
+  <div class="field form-group">
+    <label for="q-react">Which front end framework(s) (React or Vue) have you used in production, and what was your role? *</label>
+    <textarea id="q-react" name="react" rows="3"></textarea>
+  </div>
+  <div class="field form-group">
+    <label for="q-rest">Provide a brief example of a system you built that used REST (and/or GraphQL) APIs, including authentication. *</label>
+    <textarea id="q-rest" name="rest" rows="3"></textarea>
+  </div>
+  <div class="field form-group">
+    <label for="q-oss">Describe your open-source contributions. *</label>
+    <textarea id="q-oss" name="oss" rows="2"></textarea>
+  </div>
+
+  <h2>Reside catch-all</h2>
+  <div class="field">
+    <label>Where do you currently reside? *</label>
+    <div class="select__control"><input class="select__input" id="reside" role="combobox" aria-autocomplete="list" style="opacity:0;width:220px;height:28px" /><span id="reside-val" class="select__single-value"></span></div>
+    <div class="select__menu" id="reside-menu" hidden>
+      <div class="select__option" role="option">California</div>
+      <div class="select__option" role="option">Florida</div>
+      <div class="select__option" role="option">Somewhere else</div>
+    </div>
+  </div>
+
+  <button type="submit" id="submit-btn">Submit</button>
+  </div>
+</form>
+<script>
+function wire(menuId, inputId, valId) {
+  const input = document.getElementById(inputId);
+  const menu = document.getElementById(menuId);
+  const val = document.getElementById(valId);
+  const control = input.closest('.select__control');
+  const open = () => { menu.hidden = false; };
+  const close = () => { menu.hidden = true; };
+  control.addEventListener('mousedown', (e) => { e.preventDefault(); open(); });
+  control.addEventListener('click', open);
+  input.addEventListener('focus', open);
+  input.addEventListener('click', open);
+  menu.querySelectorAll('[role="option"]').forEach((opt) => {
+    const pick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      val.textContent = opt.textContent.trim();
+      input.value = opt.textContent.trim();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      close();
+    };
+    opt.addEventListener('mousedown', pick);
+    opt.addEventListener('click', pick);
+  });
+}
+['school','degree','disc','remote','stwork','prev','reside'].forEach((id) => wire(id + '-menu', id, id + '-val'));
+</script>
+</body>
+</html>

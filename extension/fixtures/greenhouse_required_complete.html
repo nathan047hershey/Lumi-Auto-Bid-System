@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Greenhouse required-complete fixture</title>
+<style>
+  body { font-family: system-ui; max-width: 640px; margin: 24px auto; }
+  .field { margin: 16px 0; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type="text"], input[type="email"], input[type="tel"], input[type="url"] {
+    width: 100%; max-width: 420px; padding: 8px;
+  }
+  .radio-row { display: flex; gap: 16px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<form id="application_form" data-provider="Greenhouse">
+  <h1>Machinify-style Greenhouse apply (visually complete)</h1>
+
+  <div class="field">
+    <label for="first_name">First Name *</label>
+    <input id="first_name" name="first_name" type="text" required value="Alex" />
+  </div>
+  <div class="field">
+    <label for="last_name">Last Name *</label>
+    <input id="last_name" name="last_name" type="text" required value="Testuser" />
+  </div>
+  <div class="field">
+    <label for="email">Email *</label>
+    <input id="email" name="email" type="email" required value="alex.testuser@example.com" />
+  </div>
+  <div class="field">
+    <label for="phone">Phone *</label>
+    <input id="phone" name="phone" type="tel" required value="(937) 326-3137" />
+  </div>
+  <div class="field">
+    <label for="linkedin">LinkedIn Profile *</label>
+    <input id="linkedin" name="job_application[answers_attributes][0][text_value]" type="url"
+      required value="https://www.linkedin.com/in/alex-testuser" />
+  </div>
+
+  <div class="field" id="field-reside">
+    <label>Do you currently reside in the United States? *</label>
+    <div class="radio-row">
+      <label><input type="radio" name="question_reside" value="1" required checked /> Yes</label>
+      <label><input type="radio" name="question_reside" value="0" /> No</label>
+    </div>
+  </div>
+
+  <div class="field" id="field-sponsor">
+    <label>Will you now or in the future require visa sponsorship? *</label>
+    <div class="radio-row">
+      <label><input type="radio" name="question_sponsor" value="1" required /> Yes</label>
+      <label><input type="radio" name="question_sponsor" value="0" checked /> No</label>
+    </div>
+  </div>
+
+  <div class="field" id="field-auth" aria-hidden="true" style="position:absolute;left:-9999px">
+    <label>Do you currently reside in the United States? *</label>
+    <div class="radio-row">
+      <label><input type="radio" name="question_reside_dup" value="1" /> Yes</label>
+      <label><input type="radio" name="question_reside_dup" value="0" /> No</label>
+    </div>
+  </div>
+
+  <button type="submit">Submit Application</button>
+</form>
+</body>
+</html>

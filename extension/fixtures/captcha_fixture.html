@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><title>Captcha fixture</title></head>
+<body>
+<form id="apply">
+  <div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI" data-callback="onCaptchaOk"></div>
+  <iframe src="https://www.google.com/recaptcha/api2/anchor?k=6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></iframe>
+  <button type="submit">Submit</button>
+</form>
+<script>
+  window.__cbFired = false;
+  window.onCaptchaOk = function(t) { window.__cbFired = true; window.__cbToken = t; };
+  window.grecaptcha = { getResponse: function() { return ''; } };
+</script>
+</body>
+</html>

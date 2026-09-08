@@ -1,0 +1,28 @@
+server/database.sqlite
+server/resumes/
+server/uploads/
+server/data/
+server/logs/*.log
+server/*.log
+
+# Environment files (keep .env.example tracked, never the real .env)
+.env
+.env.local
+.env.*.local
+!.env.example
+server/local.env
+local.env
+
+# Playwright / live-test Chromium profiles (never pollute repo root)
+.tmp/
+.tmp-lumi*/
+**/.tmp-lumi*/
+
+# Dependencies & build
+node_modules/
+client/dist/
+client/node_modules/
+server/node_modules/
+*.log
+.DS_Store
+Thumbs.db

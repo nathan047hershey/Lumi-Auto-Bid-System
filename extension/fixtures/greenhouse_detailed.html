@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Greenhouse detailed fixture</title>
+<style>
+  .select__menu { border:1px solid #ccc; margin-top:2px; background:#fff; }
+  .select__option { padding:6px 10px; cursor:pointer; }
+  .select__option:hover, .select__option.is-focused { background:#dbeafe; }
+  .select__control { border:1px solid #94a3b8; padding:4px 8px; min-height:36px; display:flex; align-items:center; width:280px; }
+  .field { margin:12px 0; }
+  label { display:block; font-weight:600; margin-bottom:4px; }
+</style>
+</head>
+<body>
+<form id="application_form" data-provider="Greenhouse">
+  <div class="field">
+    <label for="gh-first">First Name *</label>
+    <input id="gh-first" name="first_name" type="text" />
+  </div>
+  <div class="field">
+    <label for="gh-last">Last Name *</label>
+    <input id="gh-last" name="last_name" type="text" />
+  </div>
+  <div class="field">
+    <label for="gh-email">Email *</label>
+    <input id="gh-email" name="email" type="email" />
+  </div>
+  <div class="field">
+    <label>Country *</label>
+    <div class="select__control" id="country-control">
+      <input class="select__input" id="country" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="country-val"></span>
+    </div>
+    <div class="select__menu" id="country-menu" hidden>
+      <div class="select__option" role="option">United States</div>
+      <div class="select__option" role="option">Canada</div>
+      <div class="select__option" role="option">Mexico</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>School</label>
+    <div class="select__control">
+      <input class="select__input" id="school" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="school-val"></span>
+    </div>
+    <div class="select__menu" id="school-menu" hidden>
+      <div class="select__option" role="option">Virginia Tech</div>
+      <div class="select__option" role="option">Stanford University</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Degree</label>
+    <div class="select__control">
+      <input class="select__input" id="degree" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="degree-val"></span>
+    </div>
+    <div class="select__menu" id="degree-menu" hidden>
+      <div class="select__option" role="option">High School</div>
+      <div class="select__option" role="option">Associate's Degree</div>
+      <div class="select__option" role="option">Bachelor's Degree</div>
+      <div class="select__option" role="option">Master's Degree</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Discipline</label>
+    <div class="select__control">
+      <input class="select__input" id="disc" role="combobox" aria-autocomplete="list" aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="disc-val">Select...</span>
+      <span class="select__placeholder" id="disc-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="disc-menu" hidden>
+      <div class="select__option select__loading" role="option">Loading…</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Where do you currently reside? *</label>
+    <div class="select__control">
+      <input class="select__input" id="reside" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="reside-val"></span>
+    </div>
+    <div class="select__menu" id="reside-menu" hidden>
+      <div class="select__option" role="option">California</div>
+      <div class="select__option" role="option">Florida</div>
+      <div class="select__option" role="option">Massachusetts</div>
+      <div class="select__option" role="option">New Mexico</div>
+      <div class="select__option" role="option">Somewhere else</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>Are you able to work remotely and maintain a work environment that is free from distractions? *</label>
+    <div class="select__control">
+      <input class="select__input" id="remote" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="remote-val"></span>
+    </div>
+    <div class="select__menu" id="remote-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>If you reside in a US state where we have a legal entity, will you consistently be working from this state while employed in this role? *</label>
+    <div class="select__control">
+      <input class="select__input" id="stwork" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="stwork-val"></span>
+    </div>
+    <div class="select__menu" id="stwork-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field">
+    <label>How many years of professional experience do you have as a full stack web developer (front end + back end)? *</label>
+    <label><input type="radio" name="yoe" value="lt5" style="opacity:0"> Less than 5 years</label>
+    <label><input type="radio" name="yoe" value="5-6" style="opacity:0"> 5-6 years</label>
+    <label><input type="radio" name="yoe" value="7-10" style="opacity:0"> 7-10 years</label>
+    <label><input type="radio" name="yoe" value="10p" style="opacity:0"> 10+ years</label>
+  </div>
+  <div class="field">
+    <label for="gh-url">Please provide a URL to your GitHub, public portfolio. *</label>
+    <textarea id="gh-url"></textarea>
+  </div>
+  <div class="field">
+    <label>Have you ever worked at CIAT? *</label>
+    <div class="select__control">
+      <input class="select__input" id="ciat" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="ciat-val"></span>
+    </div>
+    <div class="select__menu" id="ciat-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+  <div class="field">
+    <label for="salary">What is your desired salary? *</label>
+    <input id="salary" type="text" />
+  </div>
+</form>
+<script>
+  // Minimal React-Select-like behavior for tests: click control → show menu; click option → set value.
+  function wire(controlSel, menuId, inputId, valId) {
+    const input = document.getElementById(inputId);
+    const menu = document.getElementById(menuId);
+    const val = document.getElementById(valId);
+    const control = input.closest('.select__control');
+    const open = () => { menu.hidden = false; };
+    const close = () => { menu.hidden = true; };
+    control.addEventListener('mousedown', (e) => { e.preventDefault(); open(); });
+    control.addEventListener('click', open);
+    input.addEventListener('focus', open);
+    input.addEventListener('click', open);
+    menu.querySelectorAll('[role="option"]').forEach((opt) => {
+      opt.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        val.textContent = opt.textContent.trim();
+        input.value = opt.textContent.trim();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
+      });
+      opt.addEventListener('click', (e) => {
+        e.preventDefault();
+        val.textContent = opt.textContent.trim();
+        input.value = opt.textContent.trim();
+        close();
+      });
+    });
+  }
+  wire(null, 'country-menu', 'country', 'country-val');
+  wire(null, 'school-menu', 'school', 'school-val');
+  wire(null, 'degree-menu', 'degree', 'degree-val');
+  // Discipline: delayed load + filter (Simplify-style typeahead)
+  (function wireDisc() {
+    const input = document.getElementById('disc');
+    const menu = document.getElementById('disc-menu');
+    const val = document.getElementById('disc-val');
+    const control = input.closest('.select__control');
+    const ALL = ['Computer Science', 'Computer Engineering', 'Software Engineering', 'Biology', 'Other'];
+    let loadTimer = null;
+    const paint = (q) => {
+      const qq = String(q || '').toLowerCase().trim();
+      menu.innerHTML = '';
+      const hits = ALL.filter((o) => !qq || o.toLowerCase().includes(qq) || (qq.length >= 2 && o.toLowerCase().startsWith(qq.slice(0, 2))));
+      (hits.length ? hits : ['Other']).forEach((text) => {
+        const opt = document.createElement('div');
+        opt.className = 'select__option';
+        opt.setAttribute('role', 'option');
+        opt.textContent = text;
+        const choose = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          val.textContent = text;
+          const ph = document.getElementById('disc-ph');
+          if (ph) ph.style.display = 'none';
+          input.value = text;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          menu.hidden = true;
+        };
+        opt.addEventListener('mousedown', choose);
+        opt.addEventListener('click', choose);
+        menu.appendChild(opt);
+      });
+    };
+    const openLoading = () => {
+      menu.hidden = false;
+      menu.innerHTML = '<div class="select__option select__loading" role="option">Loading…</div>';
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => paint(input.value), 450);
+    };
+    control.addEventListener('mousedown', (e) => { e.preventDefault(); openLoading(); });
+    control.addEventListener('click', openLoading);
+    input.addEventListener('focus', openLoading);
+    input.addEventListener('click', openLoading);
+    input.addEventListener('input', () => {
+      menu.hidden = false;
+      menu.innerHTML = '<div class="select__option select__loading" role="option">Loading…</div>';
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => paint(input.value), 350);
+    });
+  })();
+  wire(null, 'reside-menu', 'reside', 'reside-val');
+  wire(null, 'remote-menu', 'remote', 'remote-val');
+  wire(null, 'stwork-menu', 'stwork', 'stwork-val');
+  wire(null, 'ciat-menu', 'ciat', 'ciat-val');
+</script>
+</body>
+</html>

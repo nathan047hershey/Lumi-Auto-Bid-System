@@ -1,0 +1,36 @@
+{
+  "name": "job-apply-server",
+  "version": "1.0.0",
+  "description": "Job Application Management Platform - Backend",
+  "main": "index.js",
+  "scripts": {
+    "start": "pm2 start index.js --name job-apply-backend",
+    "dev": "node --watch-path=./index.js --watch-path=./routes --watch-path=./services --watch-path=./config --watch-path=./middleware --watch-path=./utils index.js",
+    "dev:watch": "node --watch-path=./index.js --watch-path=./routes --watch-path=./services --watch-path=./config --watch-path=./middleware --watch-path=./utils index.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "amqplib": "^2.0.1",
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "docx": "^8.5.0",
+    "docx-html": "^1.0.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "html-docx": "^1.2.0",
+    "html-to-docx": "^1.8.0",
+    "html-to-docx-lite": "^2.0.1",
+    "imapflow": "^1.7.8",
+    "jsdom": "^29.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "mammoth": "^1.12.0",
+    "markdown-docx": "^1.6.0",
+    "markdown-to-docx": "^1.2.0",
+    "markdown-to-json": "^0.5.4",
+    "openai": "^6.15.0",
+    "puppeteer-core": "^25.3.0",
+    "sql.js": "^1.10.0"
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "failed": 0,
+  "passed": 5,
+  "results": [
+    {
+      "name": "icims",
+      "ok": true,
+      "failures": [],
+      "ats": "icims",
+      "filled": 8,
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "linkedin",
+        "work_authorization",
+        "requires_sponsorship"
+      ],
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "li": "https://www.linkedin.com/in/alex-testuser",
+        "auth": "Yes",
+        "sponsor": "No"
+      }
+    },
+    {
+      "name": "bamboohr",
+      "ok": true,
+      "failures": [],
+      "ats": "bamboohr",
+      "filled": 8,
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "linkedin",
+        "work_authorization"
+      ],
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "li": "https://www.linkedin.com/in/alex-testuser",
+        "auth": "Yes"
+      }
+    },
+    {
+      "name": "generic",
+      "ok": true,
+      "failures": [],
+      "ats": "generic",
+      "filled": 6,
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "requires_sponsorship"
+      ],
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "sponsor": "No"
+      }
+    },
+    {
+      "name": "dial_vs_residence",
+      "ok": true,
+      "failures": [],
+      "ats": "greenhouse",
+      "filled": 4,
+      "kinds": [
+        "first_name",
+        "phone",
+        "country",
+        "email"
+      ],
+      "dom": {
+        "first": "Alex",
+        "phone": "5550109999",
+        "country": "US",
+        "email": "alex.testuser@example.com"
+      }
+    },
+    {
+      "name": "linkedin_blocked",
+      "ok": true,
+      "failures": [],
+      "ats": "linkedin",
+      "reason": "LinkedIn Easy Apply is not supported"
+    }
+  ]
+}

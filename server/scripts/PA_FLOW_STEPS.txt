@@ -1,0 +1,12 @@
+﻿LUMI WEBHOOK (already on clipboard):
+https://crystal-daily-merchants-programming.trycloudflare.com/api/hooks/inbound-mail?token=9e9b61e5acc19defb631c8779fade59dfe240e66f6391791
+
+In Power Automate (your signed-in window):
+1. Create → Automated cloud flow → name: Lumi Greenhouse OTP
+2. Search trigger: When a new email arrives (V3) → add → create
+3. New step → HTTP → Method POST
+4. URI: paste clipboard
+5. Headers: Content-Type = application/json
+6. Body:
+{"subject": "@{triggerOutputs()?['body/subject']}", "text": "@{triggerOutputs()?['body/bodyPreview']}", "from": "@{triggerOutputs()?['body/from']}"}
+7. Save → Turn on

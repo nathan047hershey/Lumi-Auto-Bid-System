@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Greenhouse hard cases — training fixture</title>
+<style>
+  body { font-family: system-ui; max-width: 760px; margin: 24px auto; }
+  .field { margin: 20px 0; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+  .question-label { display: block; font-weight: 600; margin-bottom: 8px; line-height: 1.35; }
+  .helper-text { font-size: 12px; color: #64748b; margin-top: 6px; }
+  .select__control { border: 1px solid #94a3b8; padding: 4px 8px; min-height: 36px; display: flex; align-items: center; width: 100%; max-width: 420px; }
+  .select__menu { border: 1px solid #ccc; background: #fff; max-width: 420px; }
+  .select__option { padding: 8px 10px; cursor: pointer; }
+  .select__option:hover { background: #dbeafe; }
+  .select__placeholder { color: #94a3b8; }
+  h1 { font-size: 1.25rem; }
+  h2 { margin-top: 28px; font-size: 1rem; color: #475569; border-bottom: 1px solid #e2e8f0; }
+</style>
+</head>
+<body>
+<form id="application_form" data-provider="Greenhouse">
+  <h1>Hard-case training form (Greenhouse layout)</h1>
+
+  <h2>Compliance — screenshot layout (question above, helper below)</h2>
+
+  <!-- Case 1: Visa sponsorship — input only shows Select..., helper says Work Authorization -->
+  <div class="field" id="field-sponsor">
+    <span class="question-label">Do you currently, or will you in the future, require visa sponsorship to work here? *</span>
+    <div class="select__control">
+      <input class="select__input" id="sponsor" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." placeholder="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="sponsor-val"></span>
+      <span class="select__placeholder" id="sponsor-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="sponsor-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+    <div class="helper-text">Work Authorization</div>
+  </div>
+
+  <!-- Case 2: Salary text input — helper Desired salary -->
+  <div class="field" id="field-salary">
+    <span class="question-label">What are your salary expectations for this role? *</span>
+    <input id="salary" name="salary" type="text" style="width:100%;max-width:420px;padding:8px" />
+    <div class="helper-text">Desired salary</div>
+  </div>
+
+  <!-- Case 3: NDA long consent select -->
+  <div class="field" id="field-nda">
+    <span class="question-label">I acknowledge my right to refrain from disclosing any confidential or proprietary information during the interview and understand that the company will not solicit such information, in accordance with the Non-Disclosure Agreement *</span>
+    <div class="select__control">
+      <input class="select__input" id="nda" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="nda-val"></span>
+      <span class="select__placeholder" id="nda-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="nda-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+      <div class="select__option" role="option">I do not consent</div>
+    </div>
+    <div class="helper-text">NDA</div>
+  </div>
+
+  <!-- Case 4: AI note-taker consent -->
+  <div class="field" id="field-ai">
+    <span class="question-label">I consent to the use of AI-powered note-taking tools during the interview process and acknowledge that the interview may be recorded and stored for evaluation purposes. *</span>
+    <div class="select__control">
+      <input class="select__input" id="ai-note" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="ai-note-val"></span>
+      <span class="select__placeholder" id="ai-note-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="ai-note-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+      <div class="select__option" role="option">I do not consent to recording</div>
+    </div>
+    <div class="helper-text">AI Note taker</div>
+  </div>
+
+  <h2>Education — delayed typeahead</h2>
+
+  <div class="field" id="field-disc">
+    <span class="question-label">Discipline *</span>
+    <div class="select__control">
+      <input class="select__input" id="disc" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="disc-val">Select...</span>
+      <span class="select__placeholder" id="disc-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="disc-menu" hidden>
+      <div class="select__option select__loading" role="option">Loading…</div>
+    </div>
+  </div>
+
+  <h2>Traps — must not misfill</h2>
+
+  <!-- Case 5: Real work auth (NOT sponsorship) -->
+  <div class="field" id="field-workauth">
+    <span class="question-label">Are you legally authorized to work in the United States? *</span>
+    <div class="select__control">
+      <input class="select__input" id="workauth" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="workauth-val"></span>
+    </div>
+    <div class="select__menu" id="workauth-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+    <div class="helper-text">Work Authorization</div>
+  </div>
+
+  <!-- Case 6: Salary as native select ranges -->
+  <div class="field" id="field-salary-select">
+    <span class="question-label">Expected compensation range *</span>
+    <select id="salary-range" name="comp_range">
+      <option value="">Select...</option>
+      <option value="60-80">$60,000 - $80,000</option>
+      <option value="80-100">$80,000 - $100,000</option>
+      <option value="100-120">$100,000 - $120,000</option>
+      <option value="120-150">$120,000 - $150,000</option>
+    </select>
+    <div class="helper-text">Desired salary</div>
+  </div>
+
+  <!-- Case 7: Data protection acknowledge (long option text) -->
+  <div class="field" id="field-privacy">
+    <span class="question-label">Data protection notice — please acknowledge *</span>
+    <select id="privacy" name="privacy">
+      <option value="">Select...</option>
+      <option value="ack">I acknowledge that I have read and understood the data protection notice</option>
+      <option value="decline">I do not consent to the processing of my personal data</option>
+    </select>
+  </div>
+
+  <!-- Case 8: Notice period text -->
+  <div class="field" id="field-notice">
+    <span class="question-label">What is your notice period with your current employer? (i.e. 30 days) *</span>
+    <input id="notice" name="notice" type="text" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+
+  <h2>More hard traps</h2>
+
+  <!-- Case 9: School delayed typeahead -->
+  <div class="field" id="field-school">
+    <span class="question-label">School *</span>
+    <div class="select__control">
+      <input class="select__input" id="school" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="school-val">Select...</span>
+      <span class="select__placeholder" id="school-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="school-menu" hidden>
+      <div class="select__option select__loading" role="option">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Case 10: Degree synonym match -->
+  <div class="field" id="field-degree">
+    <span class="question-label">Degree *</span>
+    <div class="select__control">
+      <input class="select__input" id="degree" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="degree-val"></span>
+    </div>
+    <div class="select__menu" id="degree-menu" hidden>
+      <div class="select__option" role="option">High School</div>
+      <div class="select__option" role="option">Associate's Degree</div>
+      <div class="select__option" role="option">Bachelor's Degree</div>
+      <div class="select__option" role="option">Master's Degree</div>
+      <div class="select__option" role="option">Other</div>
+    </div>
+  </div>
+
+  <!-- Case 11: Country — not confused with work-auth country wording -->
+  <div class="field" id="field-country">
+    <span class="question-label">Country *</span>
+    <div class="select__control">
+      <input class="select__input" id="country" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="country-val"></span>
+    </div>
+    <div class="select__menu" id="country-menu" hidden>
+      <div class="select__option" role="option">United States</div>
+      <div class="select__option" role="option">Canada</div>
+      <div class="select__option" role="option">United Kingdom</div>
+    </div>
+  </div>
+
+  <!-- Case 12: Previous employer No -->
+  <div class="field" id="field-prev">
+    <span class="question-label">Have you ever worked at Acme Corp? *</span>
+    <div class="select__control">
+      <input class="select__input" id="prev-emp" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="prev-emp-val"></span>
+    </div>
+    <div class="select__menu" id="prev-emp-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+    </div>
+  </div>
+
+  <!-- Case 13: Over 18 -->
+  <div class="field" id="field-over18">
+    <span class="question-label">Are you 18 years of age or older? *</span>
+    <select id="over18" name="over18">
+      <option value="">Select...</option>
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+  </div>
+
+  <!-- Case 14: Relocate -->
+  <div class="field" id="field-relocate">
+    <span class="question-label">Are you willing to relocate for this position? *</span>
+    <div class="select__control">
+      <input class="select__input" id="relocate" role="combobox" aria-autocomplete="list" style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="relocate-val"></span>
+    </div>
+    <div class="select__menu" id="relocate-menu" hidden>
+      <div class="select__option" role="option">Yes</div>
+      <div class="select__option" role="option">No</div>
+      <div class="select__option" role="option">Open to discussion</div>
+    </div>
+  </div>
+
+  <!-- Case 15: How heard -->
+  <div class="field" id="field-heard">
+    <span class="question-label">How did you hear about this position? *</span>
+    <select id="heard" name="heard">
+      <option value="">Select...</option>
+      <option value="li">LinkedIn</option>
+      <option value="gh">Company website</option>
+      <option value="ref">Employee referral</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+
+  <!-- Case 16: Gender Man↔Male -->
+  <div class="field" id="field-gender">
+    <span class="question-label">Gender *</span>
+    <select id="gender" name="gender">
+      <option value="">Select...</option>
+      <option value="man">Man</option>
+      <option value="woman">Woman</option>
+      <option value="nb">Non-binary</option>
+      <option value="decline">Decline to self-identify</option>
+    </select>
+  </div>
+
+  <!-- Case 17: YOE radios -->
+  <div class="field" id="field-yoe">
+    <span class="question-label">How many years of professional experience do you have as a full stack web developer? *</span>
+    <label><input type="radio" name="yoe" value="lt5" style="opacity:0"> Less than 5 years</label>
+    <label><input type="radio" name="yoe" value="5-6" style="opacity:0"> 5-6 years</label>
+    <label><input type="radio" name="yoe" value="7-10" style="opacity:0"> 7-10 years</label>
+    <label><input type="radio" name="yoe" value="10p" style="opacity:0"> 10+ years</label>
+  </div>
+
+  <!-- Case 18: Links -->
+  <div class="field" id="field-linkedin">
+    <span class="question-label">LinkedIn Profile URL *</span>
+    <input id="linkedin" name="linkedin" type="url" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+  <div class="field" id="field-github">
+    <span class="question-label">Please provide a URL to your GitHub, public portfolio. *</span>
+    <input id="github" name="github" type="url" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+
+  <!-- Case 19: GDPR agree / do not agree trap -->
+  <div class="field" id="field-gdpr">
+    <span class="question-label">I agree to the processing of my personal data in accordance with the candidate privacy policy and GDPR notice. *</span>
+    <select id="gdpr" name="gdpr">
+      <option value="">Select...</option>
+      <option value="agree">I agree</option>
+      <option value="no">I do not agree</option>
+    </select>
+  </div>
+
+  <!-- Case 20: Terms checkbox -->
+  <div class="field" id="field-terms">
+    <label>
+      <input id="terms" name="terms" type="checkbox" />
+      I certify that the information provided is accurate and I agree to the terms and conditions.
+    </label>
+  </div>
+
+  <!-- Case 21: Earliest start -->
+  <div class="field" id="field-start">
+    <span class="question-label">What is your earliest available start date? *</span>
+    <input id="start-date" name="start_date" type="text" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+
+  <!-- Case 22: Salary K-style native select -->
+  <div class="field" id="field-salary-k">
+    <span class="question-label">Expected base salary (in thousands / k) *</span>
+    <select id="salary-k" name="salary_k">
+      <option value="">Select...</option>
+      <option value="70k">70k</option>
+      <option value="80k">80k</option>
+      <option value="90k">90k</option>
+      <option value="100k">100k</option>
+      <option value="120k">120k</option>
+    </select>
+  </div>
+
+  <!-- Case 23: Reside city typeahead delayed -->
+  <div class="field" id="field-reside">
+    <span class="question-label">Where do you currently reside? *</span>
+    <div class="select__control">
+      <input class="select__input" id="reside" role="combobox" aria-autocomplete="list"
+        aria-label="Select..." style="opacity:0;width:200px;height:28px" />
+      <span class="select__single-value" id="reside-val"></span>
+      <span class="select__placeholder" id="reside-ph">Select...</span>
+    </div>
+    <div class="select__menu" id="reside-menu" hidden>
+      <div class="select__option select__loading" role="option">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Case 25: Where are you located? (state list / US residents help text) -->
+  <div class="field" id="field-located">
+    <label class="question-label" for="located">
+      Where are you located? (We are always expanding, but there is a small list of states we do not hire in, including Alabama, Alaska, Hawaii, Utah and while we love all parts of the world, we can only hire permanent US residents at this time.) *
+    </label>
+    <select id="located" name="located_state" required>
+      <option value="">Select...</option>
+      <option value="CA">California</option>
+      <option value="NY">New York</option>
+      <option value="OH">Ohio</option>
+      <option value="TX">Texas</option>
+      <option value="WA">Washington</option>
+      <option value="AL">Alabama</option>
+      <option value="UT">Utah</option>
+    </select>
+  </div>
+
+  <!-- Case 24: Contact basics -->
+  <div class="field" id="field-first">
+    <span class="question-label">First Name *</span>
+    <input id="first" name="first_name" type="text" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+  <div class="field" id="field-last">
+    <span class="question-label">Last Name *</span>
+    <input id="last" name="last_name" type="text" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+  <div class="field" id="field-email">
+    <span class="question-label">Email *</span>
+    <input id="email" name="email" type="email" style="width:100%;max-width:420px;padding:8px" />
+  </div>
+</form>
+
+<script>
+  function wireSelect(inputId, menuId, valId, phId) {
+    const input = document.getElementById(inputId);
+    const menu = document.getElementById(menuId);
+    const val = document.getElementById(valId);
+    const ph = phId ? document.getElementById(phId) : null;
+    const control = input.closest('.select__control');
+    const open = () => { menu.hidden = false; };
+    const close = () => { menu.hidden = true; };
+    const choose = (opt, e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const t = opt.textContent.trim();
+      val.textContent = t;
+      if (ph) ph.style.display = 'none';
+      input.value = t;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      close();
+    };
+    control.addEventListener('mousedown', (e) => { e.preventDefault(); open(); });
+    control.addEventListener('click', open);
+    input.addEventListener('focus', open);
+    menu.querySelectorAll('[role="option"]').forEach((opt) => {
+      if (/loading/i.test(opt.textContent)) return;
+      opt.addEventListener('mousedown', (e) => choose(opt, e));
+      opt.addEventListener('click', (e) => choose(opt, e));
+    });
+  }
+
+  function wireDelayedTypeahead(inputId, menuId, valId, phId, allOptions, delayMs) {
+    const input = document.getElementById(inputId);
+    const menu = document.getElementById(menuId);
+    const val = document.getElementById(valId);
+    const ph = phId ? document.getElementById(phId) : null;
+    const control = input.closest('.select__control');
+    let loadTimer = null;
+    const paint = (q) => {
+      const qq = String(q || '').toLowerCase().trim();
+      menu.innerHTML = '';
+      const hits = allOptions.filter((o) => !qq || o.toLowerCase().includes(qq));
+      (hits.length ? hits : [allOptions[allOptions.length - 1] || 'Other']).forEach((text) => {
+        const opt = document.createElement('div');
+        opt.className = 'select__option';
+        opt.setAttribute('role', 'option');
+        opt.textContent = text;
+        const choose = (e) => {
+          e.preventDefault();
+          val.textContent = text;
+          if (ph) ph.style.display = 'none';
+          input.value = text;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          menu.hidden = true;
+        };
+        opt.addEventListener('mousedown', choose);
+        opt.addEventListener('click', choose);
+        menu.appendChild(opt);
+      });
+    };
+    const openLoading = () => {
+      menu.hidden = false;
+      menu.innerHTML = '<div class="select__option select__loading" role="option">Loading…</div>';
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => paint(input.value), delayMs || 400);
+    };
+    control.addEventListener('mousedown', (e) => { e.preventDefault(); openLoading(); });
+    control.addEventListener('click', openLoading);
+    input.addEventListener('focus', openLoading);
+    input.addEventListener('input', () => {
+      menu.hidden = false;
+      menu.innerHTML = '<div class="select__option select__loading" role="option">Loading…</div>';
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => paint(input.value), Math.max(250, (delayMs || 400) - 50));
+    });
+  }
+
+  wireSelect('sponsor', 'sponsor-menu', 'sponsor-val', 'sponsor-ph');
+  wireSelect('nda', 'nda-menu', 'nda-val', 'nda-ph');
+  wireSelect('ai-note', 'ai-note-menu', 'ai-note-val', 'ai-note-ph');
+  wireSelect('workauth', 'workauth-menu', 'workauth-val', null);
+  wireSelect('degree', 'degree-menu', 'degree-val', null);
+  wireSelect('country', 'country-menu', 'country-val', null);
+  wireSelect('prev-emp', 'prev-emp-menu', 'prev-emp-val', null);
+  wireSelect('relocate', 'relocate-menu', 'relocate-val', null);
+
+  wireDelayedTypeahead('disc', 'disc-menu', 'disc-val', 'disc-ph',
+    ['Computer Science', 'Computer Engineering', 'Software Engineering', 'Biology', 'Other'], 400);
+  wireDelayedTypeahead('school', 'school-menu', 'school-val', 'school-ph',
+    ['Virginia Tech', 'Stanford University', 'MIT', 'Other'], 500);
+  wireDelayedTypeahead('reside', 'reside-menu', 'reside-val', 'reside-ph',
+    ['Palo Alto, CA', 'California', 'New York', 'Somewhere else'], 450);
+</script>
+</body>
+</html>
