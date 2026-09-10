@@ -2,10 +2,33 @@ const axios = require('axios');
 const { Document, Packer, Paragraph, TextRun, AlignmentType } = require('docx');
 const HTMLtoDOCX = require('html-to-docx');
 const cheerio = require('cheerio');
-const { getProviderConfig, getActiveProvider, getAlternateMinimaxConfig, isMinimaxQuotaError, promoteMinimaxSlot, getAlternateGroqConfig, isGroqQuotaError, promoteGroqSlot } = require('./settingsService');
+const { getProviderConfig, getAlternateMinimaxConfig, isMinimaxQuotaError, promoteMinimaxSlot, getAlternateGroqConfig, isGroqQuotaError, promoteGroqSlot, hasUsableProviderKey } = require('./settingsService');
 const { buildContactHtml, buildContactPromptHint } = require('./resumeContactHeader');
 const { polishResumeHtml, extractCareerFacts, buildCandidateBackground } = require('./resumePolishService');
 const { buildCompactSystemPrompt, buildCompactUserPrompt } = require('./resumePromptBuilder');
+const { asNodeBuffer } = require('../utils/asNodeBuffer');
+
+// One MiniMax CV at a time. Auto-apply and /generate-resume share this
+// lock so they cannot stampede the provider (529 / dual live timers).
+let cvGenerateChain = Promise.resolve();
+let cvInFlight = 0;
+
+function withCvGenerateLock(fn) {
+    const waiting = cvInFlight > 0;
+    const run = cvGenerateChain.then(async () => {
+        cvInFlight += 1;
+        try {
+            return await fn();
+        } finally {
+            cvInFlight = Math.max(0, cvInFlight - 1);
+        }
+    });
+    cvGenerateChain = run.then(() => {}, () => {});
+    if (waiting) {
+        console.log('[resume] waiting — another CV is already generating');
+    }
+    return run;
+}
 
 const axiosInstance = axios.create({
     maxContentLength: Infinity,
@@ -154,28 +177,57 @@ function extractMessageHtml(response) {
     };
 }
 
+function isResumeAiRequest(requestConfig) {
+    if (requestConfig?.usageKind === 'resume' || requestConfig?.forbidGroq === true) return true;
+    if (requestConfig?.providerOverride === 'minimax'
+        && /MiniMax-M2/i.test(String(requestConfig?.data?.model || ''))) {
+        const blob = (requestConfig?.data?.messages || []).map((m) => m.content || '').join('\n');
+        return /<h1>|Resume HTML|Output ONLY HTML/i.test(blob);
+    }
+    const blob = (requestConfig?.data?.messages || []).map((m) => m.content || '').join('\n');
+    return /Resume HTML for |Output ONLY HTML starting with <h1>|PRECOMPUTED: title=/i.test(blob);
+}
+
+function pinResumeToMinimax(requestConfig) {
+    if (!hasUsableProviderKey('minimax')) {
+        const err = new Error(
+            'Resume generation requires MiniMax-M2.7. Set a MiniMax API key in Admin → Settings.'
+        );
+        err.code = 'RESUME_MINIMAX_REQUIRED';
+        throw err;
+    }
+    const model = /MiniMax-M2/i.test(String(requestConfig?.data?.model || ''))
+        ? requestConfig.data.model
+        : 'MiniMax-M2.7';
+    if (requestConfig.data) requestConfig.data.model = model;
+    requestConfig.providerOverride = 'minimax';
+    requestConfig.usageKind = requestConfig.usageKind || 'resume';
+    return resolveProvider({ provider: 'minimax', model });
+}
+
 async function makeApiCallWithRetry(requestConfig, maxRetries = 3) {
-    // Allow callers to force a specific provider instead of using the
-    // admin-selected active one. Used by the automatic Akamai-block
-    // fallback in generateResume: when the primary provider returns an
-    // Akamai block, we re-issue the request against a fallback provider
-    // (typically DeepSeek) without touching the admin setting.
-    const providerName = (requestConfig && requestConfig.providerOverride) || undefined;
-    // Keep the model already placed on the wire (requestConfig.data.model)
-    // when resolving credentials for a fallback provider.
-    let provider = resolveProvider(providerName
-        ? {
-            provider: providerName,
-            ...(requestConfig?.data?.model ? { model: requestConfig.data.model } : {})
-        }
-        : undefined);
+    // CVs must never hit Groq — openai/gpt-oss-120b is an 8k TPM model
+    // and resume prompts 413. Pin those calls to MiniMax-M2.7 even if
+    // Settings still has ai_provider=groq.
+    const resumeCall = isResumeAiRequest(requestConfig);
+    const providerName = resumeCall
+        ? 'minimax'
+        : ((requestConfig && requestConfig.providerOverride) || undefined);
+    let provider = resumeCall
+        ? pinResumeToMinimax(requestConfig)
+        : resolveProvider(providerName
+            ? {
+                provider: providerName,
+                ...(requestConfig?.data?.model ? { model: requestConfig.data.model } : {})
+            }
+            : undefined);
     // Prefer the model the caller actually put on the wire
     // (requestConfig.data.model) — `provider.model` here is the
     // DEFAULT for the active provider, not necessarily what the caller
     // requested via the per-call override. Without this, the error
     // enrichment would log "model=MiniMax-M2.7" even when the call
     // used the MiniMax-M2.7-highspeed variant.
-    const actualModel = requestConfig?.data?.model || provider.model;
+    let actualModel = requestConfig?.data?.model || provider.model;
     let lastError;
     let triedAltMinimaxKey = false;
     let triedAltGroqKey = false;
@@ -255,9 +307,24 @@ async function makeApiCallWithRetry(requestConfig, maxRetries = 3) {
                 }
             }
 
+            // Groq 413 / TPM on a resume-sized request → MiniMax, never rotate Groq.
+            const groqTooBig = provider.provider === 'groq'
+                && (Number(error.upstreamStatus) === 413
+                    || /too large|TPM|tokens per minute/i.test(String(error.upstreamMessage || error.message || '')));
+            if (groqTooBig && (resumeCall || hasUsableProviderKey('minimax'))) {
+                console.warn('[ai] Groq 413 on resume-sized request; switching to MiniMax-M2.7');
+                try {
+                    provider = pinResumeToMinimax(requestConfig);
+                    actualModel = requestConfig?.data?.model || provider.model;
+                    attempt -= 1;
+                    continue;
+                } catch (_) { /* fall through */ }
+            }
+
             // Groq multi-key: rotate to the next key on rate/quota limits.
             if (
-                !triedAltGroqKey
+                !resumeCall
+                && !triedAltGroqKey
                 && provider.provider === 'groq'
                 && isGroqQuotaError(error)
             ) {
@@ -871,14 +938,124 @@ function applyWorkModeOverride(resumeHtml, workModes) {
 // single underscores between words, no leading/trailing underscores, capped length.
 function sanitizeForFilename(name, maxLen = 30) {
     if (!name) return 'Unknown';
-    let s = String(name).replace(/[^A-Za-z0-9]+/g, '_');
+    let s = String(name).trim().replace(/[^A-Za-z0-9]+/g, '_');
     s = s.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
     if (!s) return 'Unknown';
     if (s.length > maxLen) s = s.substring(0, maxLen).replace(/_+$/g, '');
     return s || 'Unknown';
 }
 
+/**
+ * Recruiter-facing / ATS upload name: First_Last.docx (no company, no timestamp).
+ * Archive files keep resume_First_Last_Company_ts.docx for uniqueness.
+ */
+function buildUploadResumeFilename(profile, ext = '.docx') {
+    const first = sanitizeForFilename(profile?.first_name || profile?.preferred_name || 'Candidate', 40);
+    const last = sanitizeForFilename(profile?.last_name || '', 40);
+    const base = last && last !== 'Unknown' ? `${first}_${last}` : first;
+    const safeExt = String(ext || '.docx').startsWith('.') ? String(ext) : `.${ext}`;
+    return `${base}${safeExt}`;
+}
+
+function buildArchiveResumeFilename(profile, companyName, timestamp = Date.now(), ext = '.docx') {
+    const first = sanitizeForFilename(profile?.first_name || 'Candidate', 40);
+    const last = sanitizeForFilename(profile?.last_name || 'Unknown', 40);
+    const company = sanitizeForFilename(companyName, 30);
+    const safeExt = String(ext || '.docx').startsWith('.') ? String(ext) : `.${ext}`;
+    return `resume_${first}_${last}_${company}_${timestamp}${safeExt}`;
+}
+
+/** Overwrite database/resumes/ready/First_Last.docx for ATS attach + default download label. */
+async function writeReadyResumeCopy(resumeBuffer, profile) {
+    const { RESUMES_READY_DIR } = require('../config/paths');
+    const fs = require('fs');
+    const path = require('path');
+    const { asNodeBuffer } = require('../utils/asNodeBuffer');
+    if (!resumeBuffer || !profile) return null;
+    try {
+        fs.mkdirSync(RESUMES_READY_DIR, { recursive: true });
+        const uploadName = buildUploadResumeFilename(profile, '.docx');
+        const filepath = path.join(RESUMES_READY_DIR, uploadName);
+        fs.writeFileSync(filepath, await asNodeBuffer(resumeBuffer));
+        return uploadName;
+    } catch (err) {
+        console.warn('[resume] ready copy skipped:', err.message);
+        return null;
+    }
+}
+
+/**
+ * Unique download folder (not zip):
+ *   Company__Full_Profile_Name__Title__2026-09-09_121012 / First_Last.docx
+ */
+function buildResumePackageFolderName({
+    companyName = '',
+    profile = null,
+    jobRole = '',
+    when = new Date()
+} = {}) {
+    const company = sanitizeForFilename(companyName || 'Company', 40);
+    const fullName = sanitizeForFilename(
+        `${profile?.first_name || 'Candidate'} ${profile?.last_name || ''}`.trim() || 'Candidate',
+        60
+    );
+    const title = sanitizeForFilename(jobRole || 'Role', 50);
+    const d = when instanceof Date ? when : new Date(when);
+    const stamp = Number.isFinite(d.getTime())
+        ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
+        : String(Date.now());
+    return `${company}__${fullName}__${title}__${stamp}`;
+}
+
+/**
+ * Write First_Last.docx into a unique package folder under resumes/packages/.
+ * Returns { folderName, cvFilename, folderPath, filePath, relativeUrl }.
+ */
+async function writeResumePackageFolder({
+    resumeBuffer,
+    resumeFilePath = null,
+    profile,
+    companyName = '',
+    jobRole = ''
+} = {}) {
+    const { RESUMES_PACKAGES_DIR } = require('../config/paths');
+    const fs = require('fs');
+    const path = require('path');
+    const { asNodeBuffer } = require('../utils/asNodeBuffer');
+
+    let buf = resumeBuffer;
+    if (!buf && resumeFilePath && fs.existsSync(resumeFilePath)) {
+        buf = fs.readFileSync(resumeFilePath);
+    }
+    if (!buf || !profile) return null;
+
+    const folderName = buildResumePackageFolderName({ companyName, profile, jobRole });
+    const cvFilename = buildUploadResumeFilename(profile, '.docx');
+    const folderPath = path.join(RESUMES_PACKAGES_DIR, folderName);
+    const filePath = path.join(folderPath, cvFilename);
+    try {
+        fs.mkdirSync(folderPath, { recursive: true });
+        fs.writeFileSync(filePath, await asNodeBuffer(buf));
+        return {
+            folderName,
+            cvFilename,
+            folderPath,
+            filePath,
+            relativeUrl: `/resumes/packages/${encodeURIComponent(folderName)}/${encodeURIComponent(cvFilename)}`
+        };
+    } catch (err) {
+        console.warn('[resume] package folder skipped:', err.message);
+        return null;
+    }
+}
+
 async function generateResume(profile, jobDescription, providedCompanyName = null, options = {}) {
+    if (!options._cvLockHeld) {
+        return withCvGenerateLock(() => generateResume(profile, jobDescription, providedCompanyName, {
+            ...options,
+            _cvLockHeld: true
+        }));
+    }
     try {
         // Step 1: Prefer user-provided company; avoid extra LLM call for speed.
         let companyName = (providedCompanyName && providedCompanyName.trim())
@@ -912,36 +1089,41 @@ async function generateResume(profile, jobDescription, providedCompanyName = nul
         });
         const promptChars = systemPrompt.length + userPrompt.length;
 
-        // Resume generation: MiniMax-M3 with thinking disabled (M2.x cannot
-        // turn thinking off and often burns the whole max_tokens budget on
-        // CoT → empty content + finish=length). Never invent a template CV.
-        const activeProvider = getActiveProvider();
-        const fastModelFor = (provider) => {
-            if (provider === 'minimax') return { model: 'MiniMax-M3' };
-            if (provider === 'deepseek') return { model: 'deepseek-chat' };
-            return null;
-        };
+        // CVs always use MiniMax-M2.7 family (highspeed first). Groq is answers/checkout only.
+        // 8k TPM cannot fit a resume prompt (upstream 413). Adding Groq keys
+        // in Settings must not steal CV generation.
+        const { hasUsableProviderKey } = require('./settingsService');
+        if (!hasUsableProviderKey('minimax')) {
+            const err = new Error(
+                'Resume generation requires MiniMax-M2.7. Set a MiniMax API key in Admin → Settings.'
+            );
+            err.code = 'RESUME_MINIMAX_REQUIRED';
+            throw err;
+        }
+        const activeProvider = 'minimax';
+        // Prefer highspeed (~100 tps) then full M2.7. Same MiniMax-M2.7 family;
+        // thinking cannot be disabled on M2.x, so speed variant cuts wall time.
+        const cvModelFast = { model: 'MiniMax-M2.7-highspeed' };
+        const cvModel = { model: 'MiniMax-M2.7' };
         const providerChain = [];
         providerChain.push({
-            provider: activeProvider,
-            overrides: fastModelFor(activeProvider),
+            provider: 'minimax',
+            overrides: cvModelFast,
             compactRetry: true,
-            label: activeProvider === 'minimax' ? 'minimax-m3-compact' : `${activeProvider}-compact`
+            label: 'minimax-m2.7-highspeed'
         });
-        // One retry on the same model if the first pass returns CoT/empty.
         providerChain.push({
-            provider: activeProvider,
-            overrides: fastModelFor(activeProvider),
+            provider: 'minimax',
+            overrides: cvModel,
             compactRetry: true,
-            label: activeProvider === 'minimax' ? 'minimax-m3-compact-2' : `${activeProvider}-compact-2`
+            label: 'minimax-m2.7-retry'
         });
-        const fallbackProvider = activeProvider === 'minimax' ? 'deepseek' : 'minimax';
-        if (require('./settingsService').hasUsableProviderKey(fallbackProvider)) {
+        if (hasUsableProviderKey('deepseek')) {
             providerChain.push({
-                provider: fallbackProvider,
-                overrides: fastModelFor(fallbackProvider),
+                provider: 'deepseek',
+                overrides: { model: 'deepseek-chat' },
                 compactRetry: true,
-                label: `${fallbackProvider}-compact`
+                label: 'deepseek-compact'
             });
         }
 
@@ -955,9 +1137,10 @@ async function generateResume(profile, jobDescription, providedCompanyName = nul
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt }
                 ],
-                // Room for HTML after any residual thinking tokens.
-                max_tokens: 16000,
-                max_completion_tokens: 16000,
+                // Cap output so runaway CoT (finish=length, 60k+ reasoning) fails
+                // fast and hits the HTML-continue path instead of 6+ minute waits.
+                max_tokens: 10000,
+                max_completion_tokens: 10000,
                 temperature: 0.35
             };
             if (isMinimax) {
@@ -1062,6 +1245,8 @@ async function generateResume(profile, jobDescription, providedCompanyName = nul
                 timeout: Math.max(AI_TIMEOUT_MS, 240_000)
             };
             req.providerOverride = entry.provider;
+            req.usageKind = 'resume';
+            req.forbidGroq = true;
             try {
                 response = await makeApiCallWithRetry(req, 1);
                 usedProvider = entry.provider;
@@ -1070,7 +1255,9 @@ async function generateResume(profile, jobDescription, providedCompanyName = nul
                 const isLast = i === providerChain.length - 1;
                 const errBlob = String(err.code || '') + ' ' + String(err.message || '');
                 const isTimeout = /timeout|ETIMEDOUT|ECONNABORTED|ECONNRESET|socket hang up|network/i.test(errBlob);
-                if ((err.isAkamaiBlock || isTimeout) && !isLast) {
+                const status = Number(err.upstreamStatus || err.response?.status || 0);
+                const tooBig = status === 413 || /too large|TPM|tokens per minute/i.test(String(err.upstreamMessage || err.message || ''));
+                if ((err.isAkamaiBlock || isTimeout || tooBig) && !isLast) {
                     console.warn(
                         `Resume generation: '${entry.provider}' failed (${err.code || err.message}); trying next.`
                     );
@@ -1544,13 +1731,14 @@ const UNIT_PATTERN = '(?:years?|yrs?|%+|percent|x|ms|s|engineers?|developers?|se
         } catch (_) { /* ignore */ }
 
         if (options.skipDocx) {
-            const filename = 'resume_' + profile.first_name + '_' + profile.last_name + '_' + sanitizeForFilename(companyName) + '_' + Date.now() + '.docx';
+            const filename = buildArchiveResumeFilename(profile, companyName, Date.now(), '.docx');
             return {
                 resumeBuffer: null,
                 resumeHtml,
                 resumeText: '',
                 companyName,
                 filename,
+                upload_filename: buildUploadResumeFilename(profile),
                 template_id: options.templateId || null,
                 font_family: font,
                 preview_css: previewCss,
@@ -1565,17 +1753,20 @@ const UNIT_PATTERN = '(?:years?|yrs?|%+|percent|x|ms|s|engineers?|developers?|se
         // bullet characters, alignment, and section ordering all match
         // the template. Otherwise fall back to the legacy html-to-docx
         // path so existing callers keep working.
-        const docBuffer = styleSpec
-            ? await require('./templateRenderer').buildDocx({ resumeHtml, profile, styleSpec, font })
-            : await htmlToDocx(resumeHtml);
+        const docBuffer = await asNodeBuffer(
+            styleSpec
+                ? await require('./templateRenderer').buildDocx({ resumeHtml, profile, styleSpec, font })
+                : await htmlToDocx(resumeHtml)
+        );
 
-        const filename = 'resume_' + profile.first_name + '_' + profile.last_name + '_' + sanitizeForFilename(companyName) + '_' + Date.now() + '.docx';
+        const filename = buildArchiveResumeFilename(profile, companyName, Date.now(), '.docx');
         return {
             resumeBuffer: docBuffer,
-            resumeHtml: resumeHtml,
+            resumeHtml,
             resumeText: '',
-            companyName: companyName,
-            filename: filename,
+            companyName,
+            filename,
+            upload_filename: buildUploadResumeFilename(profile),
             template_id: options.templateId || null,
             font_family: font,
             preview_css: previewCss,
@@ -1676,7 +1867,7 @@ async function htmlToDocx(html, options = {}) {
       ''  // footerHTMLString (empty)
     );
 
-    return buffer;
+    return asNodeBuffer(buffer);
 }
 
 // Generate HTML from resume text
@@ -2060,8 +2251,11 @@ IMPORTANT:
 - Personalize based on the job requirements
 - Match keywords from the job description`;
 
-        const provider = resolveProvider();
+        const provider = resolveProvider({ provider: 'minimax', model: 'MiniMax-M2.7' });
         const response = await makeApiCallWithRetry({
+            providerOverride: 'minimax',
+            usageKind: 'resume',
+            forbidGroq: true,
             data: { model: provider.model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], max_tokens: 2000, temperature: 0.7 },
             config: { headers: { 'Content-Type': 'application/json' }, timeout: AI_TIMEOUT_MS }
         });
@@ -2352,20 +2546,26 @@ JOB POSTING TEXT:
 //  previously-pasted job link. The lookup route lives in routes/user.js.)
 
 async function buildResumeDocx({ resumeHtml, profile, styleSpec, font = 'Arial' }) {
-    if (styleSpec) {
-        return require('./templateRenderer').buildDocx({ resumeHtml, profile, styleSpec, font });
-    }
-    return htmlToDocx(resumeHtml);
+    const packed = styleSpec
+        ? await require('./templateRenderer').buildDocx({ resumeHtml, profile, styleSpec, font })
+        : await htmlToDocx(resumeHtml);
+    return asNodeBuffer(packed);
 }
 
 module.exports = {
     generateResume,
+    withCvGenerateLock,
     buildResumeDocx,
     convertToDocx,
     generateCoverLetter,
     extractCompanyName,
     extractCompanyFromJobUrl,
     sanitizeForFilename,
+    buildUploadResumeFilename,
+    buildArchiveResumeFilename,
+    writeReadyResumeCopy,
+    buildResumePackageFolderName,
+    writeResumePackageFolder,
     stripLongDashesFromResumeHtml,
     polishResumeHtml,
     extractCareerFacts,

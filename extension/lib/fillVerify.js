@@ -8,7 +8,7 @@ export const FILL_VERIFY_BASE_LIMIT_MS = 90000;
 
 /** Normalize fillStats from bidderFill / fill.js / engine collect into one shape. */
 export function normalizeFillStats(raw = {}) {
-    const requiredTotal = Number.isFinite(Number(raw.requiredTotal))
+    let requiredTotal = Number.isFinite(Number(raw.requiredTotal))
         ? Math.max(0, Number(raw.requiredTotal))
         : (Array.isArray(raw.missingRequired) && raw.requiredComplete === false
             ? Math.max(1, (raw.missingRequired || []).length)
@@ -35,6 +35,33 @@ export function normalizeFillStats(raw = {}) {
     if (requiredTotal > 0 && requiredOk < requiredTotal) {
         requiredComplete = false;
     }
+    const resumeRequired = raw.resumeRequired === true;
+    const uploadedResume = Number(raw.uploadedResume || 0);
+    const uploaded = Number(raw.uploaded || 0);
+    const resumeFilename = String(raw.resumeFilename || raw.resume_filename || '').trim();
+    const resumeNameOk = raw.resumeNameOk === true
+        || (resumeFilename
+            && !/^resume_/i.test(resumeFilename)
+            && !/_\d{10,}\./.test(resumeFilename)
+            && /^[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z][A-Za-z0-9]*){0,2}\.(docx?|pdf)$/i.test(resumeFilename));
+    if (resumeRequired && uploadedResume < 1 && uploaded < 1 && raw.resumeOk !== true) {
+        requiredComplete = false;
+        if (!missingRequired.some((m) => /\br[ée]sum|cv\b/i.test(String(m)))) {
+            missingRequired.push('Résumé');
+        }
+        requiredTotal = Math.max(requiredTotal, 1);
+    }
+    // Messy archive names (resume_First_Last_Company_ts.docx) must not go to ATS submit.
+    if (resumeRequired && (uploadedResume > 0 || raw.resumeOk === true || resumeFilename)
+        && raw.resumeNameOk === false) {
+        requiredComplete = false;
+        if (!missingRequired.some((m) => /cv name|resume name/i.test(String(m)))) {
+            missingRequired.push('CV name');
+        }
+    }
+    if (raw.visibleRequiredErrors === true) {
+        requiredComplete = false;
+    }
     return {
         ...raw,
         requiredComplete,
@@ -43,7 +70,12 @@ export function normalizeFillStats(raw = {}) {
         missingRequired,
         incomplete: !requiredComplete,
         filled: Number(raw.filled || 0) || 0,
-        submitClicked: !!raw.submitClicked
+        submitClicked: !!raw.submitClicked,
+        resumeRequired,
+        uploadedResume,
+        resumeFilename,
+        resumeNameOk,
+        visibleRequiredErrors: !!raw.visibleRequiredErrors
     };
 }
 
@@ -71,10 +103,13 @@ export function isFillIncomplete(stats) {
     if (n.requiredComplete === false) return true;
     if (n.incomplete === true && n.requiredTotal > 0) return true;
     if (n.requiredTotal > 0 && n.requiredOk < n.requiredTotal) return true;
+    if (n.resumeRequired && Number(n.uploadedResume || n.uploaded || 0) < 1 && n.resumeOk !== true) return true;
+    if (n.resumeRequired && n.resumeNameOk === false) return true;
+    if (n.visibleRequiredErrors) return true;
     return false;
 }
 
-/** Never auto-submit when required fields are incomplete. */
+/** Never auto-submit when required fields, résumé, or CV name are incomplete. */
 export function canAutoSubmit(stats, prefs = {}) {
     if (!prefs?.autoSubmit) return false;
     if (isFillIncomplete(stats)) return false;

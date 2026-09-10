@@ -1,8 +1,8 @@
 {
-  "filled": 22,
+  "filled": 23,
   "company": "CoreWeave",
   "role": "Senior Engineer I",
-  "incomplete": false,
-  "requiredOk": 15,
+  "incomplete": true,
+  "requiredOk": 14,
   "requiredTotal": 15
 }

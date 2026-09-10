@@ -9,6 +9,7 @@ import { ClipboardList, Loader2, Save, Zap } from 'lucide-react';
 import AppPage from '@/components/AppPage';
 import PageCommandBar from '@/components/PageCommandBar';
 import LumiBidderSettings from '@/components/LumiBidderSettings';
+import TeachAndCheckPanel from '@/components/TeachAndCheckPanel';
 import ProfileAutofillSettings, {
     DEFAULT_AUTOFILL_ANSWERS,
     SHARED_AUTOFILL_KEYS
@@ -241,6 +242,10 @@ export default function AutofillSettingsPage() {
                             />
                         </div>
                     )}
+                    <div className="mt-5 border-t border-white/[0.07] pt-4">
+                        <h3 className="mb-2 text-sm font-semibold tracking-tight">Learn from a bidding course</h3>
+                        <TeachAndCheckPanel compact />
+                    </div>
                 </section>
                 </div>
             </div>

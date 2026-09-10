@@ -298,6 +298,14 @@ async function initDatabase() {
       alter("ALTER TABLE job_applications ADD COLUMN generation_ms INTEGER");
       console.log('Added generation_ms column to job_applications');
     }
+    if (!jaCols.includes('generation_started_at')) {
+      alter("ALTER TABLE job_applications ADD COLUMN generation_started_at DATETIME");
+      console.log('Added generation_started_at column to job_applications');
+    }
+    if (!jaCols.includes('generation_finished_at')) {
+      alter("ALTER TABLE job_applications ADD COLUMN generation_finished_at DATETIME");
+      console.log('Added generation_finished_at column to job_applications');
+    }
     db.run(`CREATE INDEX IF NOT EXISTS idx_job_applications_job_link ON job_applications(job_link_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_job_applications_source ON job_applications(source)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_job_applications_gen_status ON job_applications(generation_status)`);
@@ -375,6 +383,8 @@ async function initDatabase() {
       generation_error TEXT,
       -- Wall-clock ms for last successful CV generate (Job Links UI).
       generation_ms INTEGER,
+      generation_started_at DATETIME,
+      generation_finished_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (profile_id) REFERENCES candidate_profiles(id) ON DELETE CASCADE
@@ -620,6 +630,10 @@ async function initDatabase() {
     ensureLink('clearance_required', 'TEXT');
     // Free-text admin/team notes on a job link (not scraped).
     ensureLink('comment', 'TEXT');
+    // Set to 'expired' when the bidder (or scrape) sees a closed /
+    // no-longer-open posting. Pair with is_available=0 so Job Links
+    // can show an Expired badge and the ready queue skips the row.
+    ensureLink('closed_reason', 'TEXT');
     // The very first iteration of this migration dropped
     // job_apply_url from the rebuild. Restore it for any DB that
     // went through that broken pass. We use the same default the
@@ -1205,8 +1219,21 @@ async function initDatabase() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage_events(user_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_kind ON ai_usage_events(kind)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage_events(created_at)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_provider ON ai_usage_events(provider)`);
   } catch (error) {
     console.warn('ai_usage_events table migration skipped:', error?.message || error);
+  }
+
+  // Per-key slot for Groq rotation analytics (1-based).
+  try {
+    const aiCols = db.exec('PRAGMA table_info(ai_usage_events)');
+    const colNames = aiCols[0]?.values?.map((row) => row[1]) || [];
+    if (colNames.length && !colNames.includes('key_slot')) {
+      db.run('ALTER TABLE ai_usage_events ADD COLUMN key_slot INTEGER');
+      console.log('Added key_slot column to ai_usage_events');
+    }
+  } catch (error) {
+    console.warn('ai_usage_events key_slot migration skipped:', error?.message || error);
   }
 
   // Migration: Add job_role and core_skills columns if they don't exist

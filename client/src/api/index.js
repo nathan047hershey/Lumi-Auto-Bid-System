@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+// In development (Vite), use relative path. In production, use absolute URL.
+const apiBaseUrl = import.meta.env.VITE_API_URL || '/api';
+
 const api = axios.create({
-    baseURL: '/api',
+    baseURL: apiBaseUrl,
     headers: {
         'Content-Type': 'application/json'
     }
@@ -16,14 +19,25 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Handle auth errors
+// Only these 401s mean the JWT session is gone. Other 401s (bad LLM key,
+// wrong current password, failed login) must not wipe the session.
+const SESSION_AUTH_ERRORS = new Set([
+    'Authentication required',
+    'Invalid or expired token'
+]);
+
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
+        const status = error.response?.status;
+        const message = error.response?.data?.error;
+        const skip = error.config?.skipAuthRedirect;
+        if (status === 401 && !skip && SESSION_AUTH_ERRORS.has(message)) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            window.location.href = '/login';
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }
@@ -188,7 +202,7 @@ export const adminAPI = {
     // Settings
     getSettings: () => api.get('/admin/settings'),
     updateSettings: (data) => api.put('/admin/settings', data),
-    testSettings: (data = {}) => api.post('/admin/settings/test', data),
+    testSettings: (data = {}) => api.post('/admin/settings/test', data, { skipAuthRedirect: true }),
 
     // Resume templates (admin upload / delete)
     listTemplates: () => api.get('/admin/resume-templates'),
@@ -284,7 +298,11 @@ export const adminAPI = {
     // link".
     getJobLinksQueue: () => api.get('/admin/job-links/queue'),
     // Force re-scrape JD for a job link (pending/failed/success/dead → pending + enqueue).
-    refetchJobLink: (id) => api.post(`/job-links/${id}/refetch`)
+    refetchJobLink: (id) => api.post(`/job-links/${id}/refetch`),
+    // Enqueue CVs for matching profiles that do not yet have an application
+    // (new profiles added after the job was first processed).
+    reconcileJobLinkCvs: (id) => api.post(`/job-links/${id}/reconcile-cvs`),
+    reconcileJobLinksCvs: (ids) => api.post('/job-links/reconcile-cvs', { ids })
 };
 
 // User API
@@ -343,6 +361,11 @@ export const userAPI = {
         params: opts.lite ? { lite: 1 } : undefined
     }),
     clearBidCourses: (payload = {}) => api.post('/user/bid-courses/clear', payload),
+    correctBidCourseAnswer: (id, payload) => api.post(`/user/bid-courses/${id}/correct-answer`, payload),
+    downloadResumeFolder: (params = {}) => api.get('/user/resume-folder', {
+        params: { ...params, meta: 1 },
+        timeout: 60000
+    }),
     getBidCourseScreenshot: (id, filename, opts = {}) =>
         api.get(`/user/bid-courses/${id}/screenshots/${encodeURIComponent(filename)}`, {
             responseType: 'blob',
@@ -358,6 +381,7 @@ export const userAPI = {
     listQuestionMemory: (params = {}) => api.get('/user/bidder/brain/question-memory', { params }),
     matchQuestionMemory: (payload) => api.post('/user/bidder/brain/question-memory/match', payload),
     upsertQuestionMemory: (payload) => api.post('/user/bidder/brain/question-memory/upsert', payload),
+    teachQuestionMemory: (payload) => api.post('/user/bidder/brain/question-memory/teach', payload),
     disableQuestionMemory: (payload) => api.post('/user/bidder/brain/question-memory/disable', payload),
     clearQuestionMemory: (payload = {}) => api.post('/user/bidder/brain/question-memory/clear', payload),
     updateApplicationStatus: (id, status, reject_reason) => api.patch(`/user/applications/${id}`, { status, reject_reason }),
@@ -389,6 +413,11 @@ export const userAPI = {
     waitOutlookOtp: (payload = {}) => api.post('/user/outlook/wait-otp', payload, { timeout: 620000 }),
     disconnectOutlookMailbox: (id) => api.delete(`/user/outlook/mailboxes/${id}`),
     disconnectOutlook: () => api.delete('/user/outlook'),
+    // Free Gmail IMAP (App Password)
+    connectGmailImap: (payload) => api.post('/user/gmail/imap/connect', payload),
+    syncGmailImap: (payload = {}) => api.post('/user/gmail/imap/sync', payload),
+    disconnectGmailImapMailbox: (id) => api.delete(`/user/gmail/imap/mailboxes/${id}`),
+    disconnectGmailImap: () => api.delete('/user/gmail/imap'),
 
     // Interview requests (user-side). The shape is now a paginated
     // envelope (`{ rows, pagination }`) — the page renders the

@@ -200,7 +200,9 @@ router.post('/settings/test', async (req, res) => {
         } else {
             const body = response.data;
             const msg = (body && (body.error?.message || body.message || body.error)) || JSON.stringify(body);
-            res.status(response.status >= 400 ? response.status : 502).json({
+            // Always 200 with ok:false. Provider 401/403 must not be
+            // forwarded — the SPA interceptor treats those as session expiry.
+            res.json({
                 ok: false,
                 provider: cfg.provider,
                 model: cfg.model,
@@ -931,7 +933,10 @@ router.get('/bid-courses', (req, res) => {
         const profileId = parseInt(req.query.profile_id, 10);
         let courses = bidCourseService.listCoursesAll({
             profileId: Number.isInteger(profileId) && profileId > 0 ? profileId : undefined,
-            limit: parseInt(req.query.limit, 10) || 100
+            limit: parseInt(req.query.limit, 10) || 100,
+            q: req.query.q || req.query.search || undefined,
+            from: req.query.from || req.query.date_from || undefined,
+            to: req.query.to || req.query.date_to || undefined
         });
         const ranked = [...courses].sort((a, b) => {
             const attn = (c) => {

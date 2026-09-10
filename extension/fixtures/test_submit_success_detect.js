@@ -117,6 +117,17 @@ async function main() {
     checks.push(['thank-you text ignored while form open', thankYouButFormOpen.ok === false]);
     checks.push(['thank-you+form reason form_still_open', thankYouButFormOpen.reason === 'form_still_open']);
 
+    const zoominfoThanksLeftoverForm = evaluateSubmitSuccessPage({
+        text: 'Thank you for your application. We\'re excited to learn more about you! Your application has been routed to our Talent Acquisition team.',
+        headings: ['Thank you for your application. We\'re excited to learn more about you!'],
+        radioCount: 0,
+        visibleFieldCount: 2,
+        hasSubmitControl: true,
+        emptyVisibleFields: 2
+    });
+    checks.push(['zoominfo thank-you beats leftover track-application fields', zoominfoThanksLeftoverForm.ok === true]);
+    checks.push(['zoominfo thank-you reason strong', zoominfoThanksLeftoverForm.reason === 'strong_thank_you']);
+
     let failed = 0;
     for (const [name, ok] of checks) {
         console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`);

@@ -13,6 +13,7 @@ async function main() {
 
     const {
         classifyAnswerLane,
+        isNewQuestionType,
         textSimilarity,
         enforceUniqueAnswer,
         FIXED_CONSTANT_VALUE
@@ -58,6 +59,18 @@ async function main() {
     check(
         'skill YoE → written not profile YoE',
         classifyAnswerLane({ label: 'Years of experience with React' }).lane === 'written'
+    );
+    check(
+        'written unclassified → new type (Groq)',
+        isNewQuestionType({ ...classifyAnswerLane({ label: 'Years of experience with React' }), type: 'text' })
+    );
+    check(
+        'why unique → not new type (MiniMax first)',
+        !isNewQuestionType({ ...classifyAnswerLane({ label: 'Why are you interested in this role?' }), type: 'textarea' })
+    );
+    check(
+        'exotic date field → new type (Groq)',
+        isNewQuestionType({ lane: 'written', kind: null, type: 'date' })
     );
     check(
         'background check → Yes constant',
@@ -114,6 +127,78 @@ async function main() {
         source: 'instruct'
     });
     check('reject essay upsert', essayReject.ok === false);
+
+    const taught = await qm.teachAndCheck({
+        userId: 1,
+        question: 'Will you require visa sponsorship for this role?',
+        answer: 'No',
+        checkQuestion: 'Do you need H-1B sponsorship?',
+        save: true
+    });
+    check('teach from course saves', taught.ok === true && taught.saved?.ok === true, taught.reason || '');
+    check('teach rematch hits', taught.match?.hit === true && /no/i.test(String(taught.match?.answer || '')), taught.match?.reason || '');
+    check(
+        'check-again similar wording',
+        taught.check_again?.hit === true || taught.check_ok === true,
+        taught.check_again?.reason || ''
+    );
+    const updatedAll = await qm.teachAndCheck({
+        userId: 1,
+        question: 'Will you require visa sponsorship for this role?',
+        answer: 'No',
+        save: true,
+        updateAll: true,
+        isAdmin: true
+    });
+    check(
+        'update all returns counts',
+        updatedAll.ok === true && updatedAll.update_all
+            && Number(updatedAll.update_all.memory_updated || 0) >= 1,
+        JSON.stringify(updatedAll.update_all || {})
+    );
+    const allInOne = await qm.teachAndCheck({
+        userId: 1,
+        question: 'Will you require visa sponsorship for this role?',
+        answer: 'No',
+        checkQuestion: 'Do you need H-1B sponsorship?',
+        save: true,
+        updateAll: true,
+        checkAllSites: true,
+        isAdmin: true
+    });
+    check(
+        'all pipeline',
+        allInOne.ok === true
+            && allInOne.saved?.ok === true
+            && allInOne.update_all
+            && allInOne.sites
+            && Number.isFinite(Number(allInOne.sites.site_count)),
+        JSON.stringify({
+            saved: allInOne.saved?.ok,
+            update: allInOne.update_all,
+            sites: allInOne.sites?.site_count
+        })
+    );
+    const sitesCheck = await qm.teachAndCheck({
+        userId: 1,
+        question: 'Will you require visa sponsorship for this role?',
+        answer: 'No',
+        save: false,
+        checkAllSites: true
+    });
+    check(
+        'check all sites shape',
+        sitesCheck.ok === true
+            && sitesCheck.sites
+            && Number.isFinite(Number(sitesCheck.sites.site_count)),
+        JSON.stringify(sitesCheck.sites || {})
+    );
+    const parsed = qm.parseTeachInstruction('always pick No for sponsorship');
+    check(
+        'parse instruct',
+        /sponsor/i.test(parsed.question || '') && /no/i.test(parsed.answer || ''),
+        `${parsed.question} => ${parsed.answer}`
+    );
 
     let failed = 0;
     for (const [name, ok, detail] of checks) {

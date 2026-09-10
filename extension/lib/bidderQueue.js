@@ -83,6 +83,11 @@ export const BIDDER_DEFAULTS = {
     captchaHelper: true,
     /** Extra wait when captchaHelper is on (ms). Default 90s — enough for NopeCHA, not a 5m stall. */
     captchaHelperWaitMs: 90 * 1000,
+    /**
+     * When human help is needed (CAPTCHA / apply gate / incomplete): notify, wait this long
+     * for Resume / solve, then skip the job. Synced from Settings → Human help wait.
+     */
+    humanAssistWaitMs: 90 * 1000,
     /** CapSolver API key — built-in token solve (preferred when set). */
     capsolverApiKey: '',
     /** 2Captcha API key — fallback token solve. */
@@ -110,6 +115,7 @@ export async function getBidderPrefs() {
         'bidderCaptchaGraceSec',
         'bidderCaptchaHelper',
         'bidderCaptchaHelperWaitSec',
+        'bidderHumanAssistWaitSec',
         'bidderCapsolverApiKey',
         'bidderTwocaptchaApiKey',
         'bidderCaptchaSolverTimeoutSec',
@@ -120,9 +126,19 @@ export async function getBidderPrefs() {
         // Do NOT read Mode-1 `autoSubmit` — popup default historically false
         // and would override Auto Bidder's default-on submit behavior.
     ]);
+    const humanAssistSec = Number(data.bidderHumanAssistWaitSec);
     const graceSec = Number(data.bidderCaptchaGraceSec);
     const helperWaitSec = Number(data.bidderCaptchaHelperWaitSec);
     const solverTimeoutSec = Number(data.bidderCaptchaSolverTimeoutSec);
+    // Prefer unified Settings "Human help wait"; fall back to legacy grace/helper keys.
+    const resolvedAssistSec = Number.isFinite(humanAssistSec) && humanAssistSec >= 0
+        ? Math.min(600, Math.round(humanAssistSec))
+        : (Number.isFinite(helperWaitSec) && helperWaitSec >= 0
+            ? Math.min(600, Math.round(helperWaitSec))
+            : (Number.isFinite(graceSec) && graceSec >= 0
+                ? Math.min(600, Math.round(graceSec))
+                : Math.round(BIDDER_DEFAULTS.humanAssistWaitMs / 1000)));
+    const humanAssistWaitMs = Math.round(resolvedAssistSec * 1000);
     // Explicit false stays off; unset / null → default ON (BIDDER_DEFAULTS).
     const autoSubmit = data.bidderAutoSubmit === false
         ? false
@@ -142,15 +158,12 @@ export async function getBidderPrefs() {
         // Default ON: freeze queue on CAPTCHA until you solve it (or click Resume).
         captchaFocus: data.bidderCaptchaFocus != null ? !!data.bidderCaptchaFocus : true,
         unattended: !!data.bidderUnattended,
-        captchaGraceMs: Number.isFinite(graceSec) && graceSec >= 0
-            ? Math.round(graceSec * 1000)
-            : BIDDER_DEFAULTS.captchaGraceMs,
+        humanAssistWaitMs,
+        captchaGraceMs: humanAssistWaitMs,
         captchaHelper: data.bidderCaptchaHelper != null
             ? !!data.bidderCaptchaHelper
             : BIDDER_DEFAULTS.captchaHelper,
-        captchaHelperWaitMs: Number.isFinite(helperWaitSec) && helperWaitSec >= 0
-            ? Math.round(helperWaitSec * 1000)
-            : BIDDER_DEFAULTS.captchaHelperWaitMs,
+        captchaHelperWaitMs: humanAssistWaitMs,
         capsolverApiKey: String(data.bidderCapsolverApiKey || '').trim(),
         twocaptchaApiKey: String(data.bidderTwocaptchaApiKey || '').trim(),
         captchaSolverTimeoutMs: Number.isFinite(solverTimeoutSec) && solverTimeoutSec > 0
@@ -809,6 +822,16 @@ function evaluateSubmitSuccessPage({
     const bodyHit = SUCCESS_RE.test(body);
     if (!bodyHit && !headingHit) return { ok: false, reason: 'no_match' };
 
+    // Greenhouse thank-you pages often keep leftover fields / "Track application"
+    // sign-in in the DOM. A real confirmation headline still means SUCCESS.
+    const strongThankYou = /thank\s*you\s+for\s+(?:your\s+)?application|application\s+submitted|we\s*(?:['’]?ve|have)\s+received\s+(?:your\s+)?application|your\s+application\s+has\s+been\s+routed/i.test(body)
+        || (Array.isArray(headings) ? headings : []).some((h) => (
+            /thank\s*you\s+for\s+(?:your\s+)?application|application\s+submitted/i.test(String(h || ''))
+        ));
+    if (strongThankYou) {
+        return { ok: true, reason: 'strong_thank_you' };
+    }
+
     // Active multi-field apply form → never SUCCESS (even if a phrase matched).
     const formOpen = (radioCount >= 2 || visibleFieldCount >= 2) && hasSubmitControl;
     if (formOpen) {
@@ -867,6 +890,17 @@ function collectSubmitSuccessSignalsInPage(successReSource, headingReSource, neg
     const bodyHit = successRe.test(text);
     if (!bodyHit && !headingHit) {
         return { ok: false, reason: 'no_match', sample: text.slice(0, 160) };
+    }
+    const strongThankYou = /thank\s*you\s+for\s+(?:your\s+)?application|application\s+submitted|we\s*(?:['’]?ve|have)\s+received\s+(?:your\s+)?application|your\s+application\s+has\s+been\s+routed/i.test(text)
+        || headings.some((h) => /thank\s*you\s+for\s+(?:your\s+)?application|application\s+submitted/i.test(h));
+    if (strongThankYou) {
+        return {
+            ok: true,
+            reason: 'strong_thank_you',
+            sample: text.slice(0, 160),
+            radioCount: radios.length,
+            visibleFieldCount: fields.length
+        };
     }
     const formOpen = (radios.length >= 2 || fields.length >= 2) && hasSubmitControl;
     if (formOpen || (radios.length >= 2 && hasSubmitControl)) {
@@ -1266,6 +1300,10 @@ export async function waitForCaptchaOrLoginCleared(tabId, {
         if (st?.stopRequested) {
             return { cleared: false, stopped: true };
         }
+        if (st?.pauseRequested) {
+            await new Promise((r) => setTimeout(r, pollMs));
+            continue;
+        }
         if (st?.captchaAbandonRequested) {
             await setQueueState({ captchaAbandonRequested: false });
             return { cleared: false, abandoned: true, via: 'user_skip' };
@@ -1303,9 +1341,18 @@ export async function waitForCaptchaOrLoginCleared(tabId, {
             continue;
         }
 
+        const thankYou = await detectSubmitSuccess(currentTabId).catch(() => false);
+        if (thankYou) {
+            return { cleared: true, via: 'submit_success', thankYou: true };
+        }
+
         const wall = await detectCaptchaOrLogin(currentTabId);
-        if ((!wall.captcha && !wall.login) || wall.widgetSolved) {
-            return { cleared: true, via: wall.widgetSolved ? 'widget_solved' : 'auto_detect', ...wall };
+        if (wall?.thankYou || (!wall.captcha && !wall.login) || wall.widgetSolved) {
+            return {
+                cleared: true,
+                via: wall?.thankYou ? 'submit_success' : (wall.widgetSolved ? 'widget_solved' : 'auto_detect'),
+                ...wall
+            };
         }
 
         // Apply form appeared while a passive widget is still on the page (Greenhouse

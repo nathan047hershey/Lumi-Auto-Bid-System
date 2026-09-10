@@ -18,6 +18,7 @@ export const LUMI_TWOCAPTCHA_KEY_ALT = 'lumi_2captcha_api_key';
  * @property {boolean} captchaFocus
  * @property {boolean} uploadCoverLetter
  * @property {boolean} soundEnabled
+ * @property {number} humanAssistWaitSec  Seconds to wait after notify when help is needed; then skip.
  * @property {string} capsolverApiKey
  * @property {string} twocaptchaApiKey
  */
@@ -31,9 +32,18 @@ export const DEFAULT_LUMI_BIDDER_PREFS = {
     captchaFocus: false,
     uploadCoverLetter: false,
     soundEnabled: true,
+    /** Notify → wait this long for Resume / CAPTCHA solve → then skip job. */
+    humanAssistWaitSec: 90,
     capsolverApiKey: '',
     twocaptchaApiKey: ''
 };
+
+/** Clamp human-assist wait (seconds). 0 = skip immediately after notify. */
+export function clampHumanAssistWaitSec(value, fallback = DEFAULT_LUMI_BIDDER_PREFS.humanAssistWaitSec) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(600, Math.round(n)));
+}
 
 /** One-click Jobright-style hands-free preset. */
 export const HANDS_FREE_LUMI_PREFS = {
@@ -98,7 +108,11 @@ export function loadLumiBidderPrefs() {
             ? !!stored.captchaFocus
             : (stored.unattended != null ? !stored.unattended : DEFAULT_LUMI_BIDDER_PREFS.captchaFocus),
         uploadCoverLetter: !!stored.uploadCoverLetter,
-        soundEnabled: stored.soundEnabled != null ? !!stored.soundEnabled : DEFAULT_LUMI_BIDDER_PREFS.soundEnabled
+        soundEnabled: stored.soundEnabled != null ? !!stored.soundEnabled : DEFAULT_LUMI_BIDDER_PREFS.soundEnabled,
+        humanAssistWaitSec: clampHumanAssistWaitSec(
+            stored.humanAssistWaitSec,
+            DEFAULT_LUMI_BIDDER_PREFS.humanAssistWaitSec
+        )
     };
 }
 
@@ -132,6 +146,7 @@ export function persistLumiBidderPrefs(prefs) {
             captchaFocus: !!next.captchaFocus,
             uploadCoverLetter: !!next.uploadCoverLetter,
             soundEnabled: !!next.soundEnabled,
+            humanAssistWaitSec: clampHumanAssistWaitSec(next.humanAssistWaitSec),
             capsolverApiKey: String(next.capsolverApiKey || ''),
             twocaptchaApiKey: String(next.twocaptchaApiKey || '')
         }));
@@ -144,12 +159,15 @@ export function persistLumiBidderPrefs(prefs) {
 /** Map app prefs → chrome.storage field names used by getBidderPrefs. */
 export function prefsToExtensionPatch(prefs) {
     const p = { ...DEFAULT_LUMI_BIDDER_PREFS, ...prefs };
+    const waitSec = clampHumanAssistWaitSec(p.humanAssistWaitSec);
     return {
         bidderStayInApp: !!p.stayInApp,
         bidderUnattended: !!p.unattended,
         bidderCaptchaHelper: true,
-        bidderCaptchaHelperWaitSec: 90,
-        bidderCaptchaGraceSec: 45,
+        // Same budget drives CAPTCHA helper wait + AFK grace + manual-assist skip.
+        bidderHumanAssistWaitSec: waitSec,
+        bidderCaptchaHelperWaitSec: waitSec,
+        bidderCaptchaGraceSec: waitSec,
         bidderAutoSubmit: !!p.autoSubmit,
         bidderAutoNext: !!p.autoNext,
         bidderCaptchaFocus: p.unattended ? false : !!p.captchaFocus,
@@ -205,9 +223,10 @@ export function processQueuePrefsPayload(prefs = loadLumiBidderPrefs()) {
         unattended: !!p.unattended,
         autoSubmit: !!p.autoSubmit,
         autoNext: !!p.autoNext,
-        captchaGraceSec: p.unattended ? 45 : undefined,
+        humanAssistWaitSec: clampHumanAssistWaitSec(p.humanAssistWaitSec),
+        captchaGraceSec: clampHumanAssistWaitSec(p.humanAssistWaitSec),
         captchaHelper: true,
-        captchaHelperWaitSec: 90,
+        captchaHelperWaitSec: clampHumanAssistWaitSec(p.humanAssistWaitSec),
         // Paid CapSolver / 2Captcha APIs disabled — free helpers only.
         uploadCoverLetter: !!p.uploadCoverLetter,
         disabledFillLessons

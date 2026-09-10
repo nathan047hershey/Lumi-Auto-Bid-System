@@ -31,7 +31,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
     ArrowLeft,
     Briefcase,
@@ -56,7 +56,8 @@ import {
 } from 'lucide-react';
 import { adminAPI } from '@/api';
 import { useAuth } from '@/context/AuthContext';
-import { cvGenerationTimeLabel } from '@/lib/cvGenerationTime';
+import { cvGenerationTimeLabel, useNowTick } from '@/lib/cvGenerationTime';
+import { jobLinksListQueryFromLocation } from '@/lib/jobLinksListState';
 import AppPage from '@/components/AppPage';
 import { PageLoader, Loader } from '@/components/Loader';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,26 @@ import {
 // Techstack → human label. Mirrors the rest of the app so a card
 // chip on the detail page matches the dropdown on the add/edit
 // form.
+const PLATFORM_LABEL = {
+    greenhouse: 'Greenhouse',
+    lever: 'Lever',
+    ashby: 'Ashby',
+    gem: 'Gem',
+    workday: 'Workday',
+    icims: 'iCIMS',
+    smartrecruiters: 'SmartRecruiters',
+    bamboohr: 'BambooHR',
+    oracle: 'Oracle Cloud HCM',
+    linkedin: 'LinkedIn',
+    rippling: 'Rippling',
+    jobvite: 'Jobvite',
+    paycom: 'Paycom',
+    applytojob: 'ApplyToJob',
+    paylocity: 'Paylocity',
+    successfactors: 'SuccessFactors',
+    generic: 'Other / generic'
+};
+
 const TECHSTACK_LABEL = {
     python:   'Python',
     java:     'Java',
@@ -96,7 +117,7 @@ function formatJobLinkTimestamp(value) {
 // header badge and the cron-status indicator.
 const STATUS_META = {
     pending: {
-        label: 'Pending',
+        label: 'Queued',
         className: 'bg-muted text-muted-foreground',
         icon: Clock
     },
@@ -188,6 +209,8 @@ function ApplicationCard({ application, onChanged }) {
     const [markingApplied, setMarkingApplied] = useState(false);
     const [localError, setLocalError] = useState(null);
     const isApplied = application.status === 'applied';
+    const isGenerating = application.generation_status === 'generating';
+    const genNow = useNowTick(isGenerating);
 
     const profile = application.profile || null;
     const status = STATUS_META[application.generation_status] || STATUS_META.pending;
@@ -196,6 +219,8 @@ function ApplicationCard({ application, onChanged }) {
         ? ((profile.first_name?.[0] || '') + (profile.last_name?.[0] || '')).toUpperCase()
         : '?';
     const techstacks = Array.isArray(profile?.techstacks) ? profile.techstacks : [];
+    const templateId = application.template_id || profile?.preferred_template_id || null;
+    const fontFamily = application.font_family || null;
 
     const handleRegenerate = async () => {
         setRegenerating(true);
@@ -274,18 +299,21 @@ function ApplicationCard({ application, onChanged }) {
                                     {status.label}
                                 </span>
                                 {(() => {
-                                    const gen = cvGenerationTimeLabel(application);
+                                    const gen = cvGenerationTimeLabel(application, { now: genNow });
                                     if (!gen) return null;
+                                    const running = application.generation_status === 'generating';
                                     return (
                                         <span
                                             className="font-mono text-[10px] tabular-nums text-muted-foreground"
                                             title={
                                                 application.generation_status === 'ready'
                                                     ? `CV generated in ${gen}`
-                                                    : `Generating for ${gen}`
+                                                    : running
+                                                        ? `Generating for ${gen}`
+                                                        : `Last run ${gen}`
                                             }
                                         >
-                                            {application.generation_status === 'ready' ? `${gen}` : `${gen}…`}
+                                            {running ? `${gen}…` : gen}
                                         </span>
                                     );
                                 })()}
@@ -309,16 +337,16 @@ function ApplicationCard({ application, onChanged }) {
                                     applied
                                 </Badge>
                             )}
-                            {application.template_id && (
+                            {templateId ? (
                                 <Badge variant="outline" className="text-[10px]">
-                                    template #{application.template_id}
+                                    template #{templateId}
                                 </Badge>
-                            )}
-                            {application.font_family && (
+                            ) : null}
+                            {fontFamily ? (
                                 <Badge variant="outline" className="text-[10px]">
-                                    {application.font_family}
+                                    {fontFamily}
                                 </Badge>
-                            )}
+                            ) : null}
                         </div>
 
                         {application.generation_error && application.generation_status === 'failed' && (
@@ -367,7 +395,10 @@ function ApplicationCard({ application, onChanged }) {
                                 size="sm"
                                 variant="outline"
                                 onClick={handleRegenerate}
-                                disabled={regenerating || application.generation_status === 'generating'}
+                                disabled={regenerating}
+                                title={isGenerating
+                                    ? 'Restart this CV — it will wait in the one-at-a-time queue'
+                                    : 'Generate this CV again with the profile’s current template'}
                             >
                                 {regenerating ? (
                                     <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -476,12 +507,16 @@ function listFiltersFromSearchParams(searchParams) {
     const filters = {};
     const search = searchParams.get('search');
     const techstack = searchParams.get('techstack');
+    const platform = searchParams.get('platform');
     const available = searchParams.get('available');
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
     if (search) filters.search = search;
     if (techstack && techstack !== 'all') filters.techstack = techstack;
+    if (platform && platform !== 'all') filters.platform = platform;
     if (available && available !== 'all') filters.available = available;
+    const bidState = searchParams.get('bid_state');
+    if (bidState && bidState !== 'all') filters.bid_state = bidState;
     if (dateFrom) filters.date_from = dateFrom;
     if (dateTo) filters.date_to = dateTo;
     if (searchParams.get('has_generated_resume') === '1') filters.has_generated_resume = 1;
@@ -496,14 +531,21 @@ function listFiltersFromSearchParams(searchParams) {
 function activeFilterChips(searchParams) {
     const chips = [];
     const techstack = searchParams.get('techstack');
+    const platform = searchParams.get('platform');
     const search = searchParams.get('search');
     const available = searchParams.get('available');
     if (techstack && techstack !== 'all') {
         chips.push(`Tech: ${TECHSTACK_LABEL[techstack] || techstack}`);
     }
+    if (platform && platform !== 'all') {
+        chips.push(`Platform: ${PLATFORM_LABEL[platform] || platform}`);
+    }
     if (search) chips.push(`Search: ${search}`);
     if (available === '1') chips.push('Available only');
     if (available === '0') chips.push('Unavailable only');
+    if (searchParams.get('bid_state') && searchParams.get('bid_state') !== 'all') {
+        chips.push(`Bid: ${searchParams.get('bid_state').toUpperCase()}`);
+    }
     if (searchParams.get('has_generated_resume') === '1') chips.push('Resume generated');
     if (searchParams.get('today') === '1') chips.push('Today');
     const dateFrom = searchParams.get('date_from');
@@ -517,11 +559,14 @@ export default function JobLinkDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const [searchParams] = useSearchParams();
-    const listQuery = location.search;
+    const listQuery = jobLinksListQueryFromLocation(location.search);
+    const listSearchParams = useMemo(
+        () => new URLSearchParams(listQuery.startsWith('?') ? listQuery.slice(1) : listQuery),
+        [listQuery]
+    );
     const listFilters = useMemo(
-        () => listFiltersFromSearchParams(searchParams),
-        [searchParams]
+        () => listFiltersFromSearchParams(listSearchParams),
+        [listSearchParams]
     );
     // Derive list vs detail prefixes. Supports classic /job-links/:id and hub /pipeline/links/:id.
     const detailPrefix = location.pathname.replace(/\/[^/]*$/, '');
@@ -540,6 +585,8 @@ export default function JobLinkDetail() {
     // the icon swaps from <Copy/> to <Check/> and the user gets
     // visual feedback without us juggling a toast.
     const [copied, setCopied] = useState(false);
+    const [refreshingCvs, setRefreshingCvs] = useState(false);
+    const [refreshMsg, setRefreshMsg] = useState(null);
 
     const loadRequestRef = useRef(0);
     const load = useCallback(async () => {
@@ -558,6 +605,29 @@ export default function JobLinkDetail() {
             }
         }
     }, [jobLinkId, listFilters]);
+
+    const handleRefreshCvs = useCallback(async () => {
+        setRefreshingCvs(true);
+        setRefreshMsg(null);
+        try {
+            const res = await adminAPI.reconcileJobLinkCvs(jobLinkId);
+            const n = Number(res.data?.enqueued) || 0;
+            if (res.data?.skipped === 'no_jd') {
+                setRefreshMsg('Need a job description first (paste a JD or refetch).');
+            } else {
+                setRefreshMsg(
+                    n > 0
+                        ? `Queued ${n} CV${n === 1 ? '' : 's'} for matching profiles without a resume.`
+                        : 'No new matching profiles to generate.'
+                );
+            }
+            await load();
+        } catch (err) {
+            setRefreshMsg(err.response?.data?.error || err.message || 'Refresh failed');
+        } finally {
+            setRefreshingCvs(false);
+        }
+    }, [jobLinkId, load]);
 
     useEffect(() => {
         if (!jobLinkId) return;
@@ -699,7 +769,7 @@ export default function JobLinkDetail() {
     const apps = applications;
     const pendingMatches = matchedProfiles.filter((m) => !m.has_application);
     const cronInfo = cron;
-    const filterChips = activeFilterChips(searchParams);
+    const filterChips = activeFilterChips(listSearchParams);
 
     // Copy-to-clipboard helper for the Job description card.
     // Uses the modern Clipboard API when available (HTTPS or
@@ -792,6 +862,11 @@ export default function JobLinkDetail() {
                                 {jobLink.location_flag && (
                                     <Badge variant="outline" className="uppercase text-[10px]">
                                         {jobLink.location_flag}
+                                    </Badge>
+                                )}
+                                {String(jobLink.closed_reason || '').toLowerCase() === 'expired' && (
+                                    <Badge variant="destructive" title="Posting is no longer open">
+                                        Expired
                                     </Badge>
                                 )}
                                 {(jobLink.created_by_username || jobLink.created_at) && (
@@ -1018,13 +1093,10 @@ export default function JobLinkDetail() {
                             )}
 
                             <p className="text-xs text-muted-foreground">
-                                Cron picks every fetched job_link that doesn't already have a
-                                pending / generating application, scores every profile by region
-                                + techstack, and enqueues up to {cronInfo.maxProfilesPerJob || 5}{' '}
-                                (profile, job_link) pairs onto the RabbitMQ-backed
-                                <code className="mx-1 rounded bg-muted px-1">resume_generation</code>
-                                queue. The single worker (prefetch=1) processes them one at a
-                                time and inserts one job_application per top match.
+                                Matching profiles are queued one CV at a time. Only the CV the
+                                worker is writing shows <strong>Generating…</strong> with a live
+                                timer; others stay <strong>Queued</strong> until their turn.
+                                Each run uses that profile’s current template and font.
                             </p>
 
                             {/* Admin-only tunables editor. Lets
@@ -1214,11 +1286,27 @@ export default function JobLinkDetail() {
                                     Auto-generated applications for this role
                                 </div>
                             </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 shrink-0 gap-1 px-2"
+                                onClick={handleRefreshCvs}
+                                disabled={refreshingCvs}
+                                title="Generate CVs for matching profiles that do not have one yet"
+                            >
+                                <RefreshCw className={`h-3.5 w-3.5 ${refreshingCvs ? 'animate-spin' : ''}`} />
+                                Refresh
+                            </Button>
                             <Badge variant="outline" className="shrink-0 text-[10px]">
                                 {apps.length}
                             </Badge>
                         </div>
                         <div className="space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-0.5">
+                            {refreshMsg ? (
+                                <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                                    {refreshMsg}
+                                </p>
+                            ) : null}
                             {apps.length === 0 ? (
                                 <div className="space-y-3">
                                     <div className="jobright-empty rounded-md border border-dashed border-border/60 space-y-2">
@@ -1230,16 +1318,21 @@ export default function JobLinkDetail() {
                                                         ? 'Fetching job description… CVs will generate automatically for matching profiles once it lands.'
                                                         : 'No job description yet — paste one or set a Source URL and Refetch. Auto CV needs a JD.')
                                                 : pendingMatches.length
-                                                    ? `${pendingMatches.length} matching profile${pendingMatches.length === 1 ? '' : 's'} — CVs generate automatically (or tap Generate).`
-                                                    : `No profiles with techstack “${jobLink.techstack || '—'}”. Add that stack on Profiles, or change this job’s tech tag.`}
+                                                    ? `${pendingMatches.length} matching profile${pendingMatches.length === 1 ? '' : 's'} — tap Refresh to generate CVs, or Generate on a row.`
+                                                    : `No profiles with techstack “${jobLink.techstack || '—'}”. Add that stack on Profiles, then tap Refresh.`}
                                         </p>
                                         {jobLink.fetch_error && (!jobLink.job_description || !String(jobLink.job_description).trim()) ? (
                                             <p className="text-xs text-destructive/90 break-words">
                                                 {String(jobLink.fetch_error).slice(0, 240)}
                                             </p>
                                         ) : null}
-                                        <Button size="sm" variant="outline" onClick={load}>
-                                            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Refresh
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={handleRefreshCvs}
+                                            disabled={refreshingCvs}
+                                        >
+                                            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${refreshingCvs ? 'animate-spin' : ''}`} /> Refresh
                                         </Button>
                                     </div>
                                     {pendingMatches.map((m) => (
@@ -1253,13 +1346,31 @@ export default function JobLinkDetail() {
                                     ))}
                                 </div>
                             ) : (
-                                apps.map((a) => (
-                                    <ApplicationCard
-                                        key={a.id}
-                                        application={a}
-                                        onChanged={load}
-                                    />
-                                ))
+                                <>
+                                    {apps.map((a) => (
+                                        <ApplicationCard
+                                            key={a.id}
+                                            application={a}
+                                            onChanged={load}
+                                        />
+                                    ))}
+                                    {pendingMatches.length > 0 ? (
+                                        <div className="space-y-2 pt-1">
+                                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                Matching profiles without a CV
+                                            </div>
+                                            {pendingMatches.map((m) => (
+                                                <MatchedProfileRow
+                                                    key={m.profile?.id || m.score}
+                                                    jobLinkId={jobLink.id}
+                                                    match={m}
+                                                    onChanged={load}
+                                                    canGenerate={!!(jobLink.job_description && String(jobLink.job_description).trim())}
+                                                />
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                </>
                             )}
                         </div>
                     </div>

@@ -310,6 +310,11 @@ function parseJobHtml(html) {
         };
     }
 
+    // SuccessFactors / CSOD career sites (NTT DATA, Gainwell, …):
+    // JD lives in `.jobdescription`. og:description is often just the title.
+    const sf = parseSuccessFactorsHtml(html);
+    if (sf && sf.description && sf.description.length >= 80) return sf;
+
     // Fallback — meta tags + DOM scraping (LinkedIn + generic)
     const meta = (selector, attr = 'content') => $(selector).attr(attr);
     const domTitle =
@@ -321,18 +326,78 @@ function parseJobHtml(html) {
         $('.top-card-layout__company-name').first().text().trim()
         || $('.job-details-jobs-unified-top-card__company-name').first().text().trim()
         || null;
+    const microDesc = $('[itemtype*="JobPosting"] [itemprop="description"]').first().text().trim();
     const domDescription =
-        $('.description__text').first().text().trim()
+        $('.posting-description').first().text().trim()
+        || $('[data-qa="job-description"]').first().text().trim()
+        || $('.jobdescription').first().text().trim()
+        || $('.description__text').first().text().trim()
         || $('.job-details-jobs-unified-top-card__job-description').first().text().trim()
         || $('[class*="job-description"]').first().text().trim()
+        || microDesc
         || null;
+
+    const ogDesc = meta('meta[property="og:description"]') || '';
+    const description = (domDescription && domDescription.length >= 80)
+        ? domDescription
+        : (ogDesc.length >= 80 ? ogDesc : (domDescription || ogDesc || null));
 
     return {
         title: domTitle || meta('meta[property="og:title"]') || null,
         company: domCompany || null,
         location: null,
-        description: domDescription || meta('meta[property="og:description"]') || null
+        description
     };
+}
+
+/** SuccessFactors / CSOD public career pages (e.g. careers.nttdata.ro). */
+function parseSuccessFactorsHtml(html) {
+    if (!html || typeof html !== 'string') return null;
+    if (!/jobdescription|Job Details\s*\|/i.test(html)) return null;
+    const $ = cheerio.load(html);
+    const description = $('.jobdescription').first().text().replace(/\s+/g, ' ').trim();
+    if (!description || description.length < 80) return null;
+
+    const pageTitle = $('title').first().text().replace(/\s+/g, ' ').trim();
+    let title = $('h1').first().text().replace(/\s+/g, ' ').trim();
+    if (!title || /apply now|dialogApplyBtn/i.test(title)) {
+        const fromHead = pageTitle.match(/^(.+?)\s+Job Details\s*\|/i);
+        title = fromHead ? fromHead[1].trim() : '';
+    }
+    let company = null;
+    if (pageTitle) {
+        const cleaned = pageTitle.replace(/\s*Job Details\s*/ig, ' | ').replace(/(?:\s*\|\s*){2,}/g, ' | ').replace(/^\s*\||\|\s*$/g, '').trim();
+        const parts = cleaned.split('|').map((p) => p.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+            if (!title) title = parts[0];
+            company = parts[parts.length - 1];
+        } else if (!title && parts[0]) {
+            title = parts[0];
+        }
+    }
+    const location = $('.joblocation, .jobLocation, .job-location-inline, .jobGeoLocation')
+        .first().text().replace(/\s+/g, ' ').trim() || null;
+    return {
+        title: title || null,
+        company: company || null,
+        location,
+        description
+    };
+}
+
+function isSuccessFactorsCareerUrl(url) {
+    const s = String(url || '');
+    return /successfactors\.com/i.test(s)
+        || /\/job\/[^/?#]+\/\d{6,}/i.test(s);
+}
+
+async function fetchSuccessFactorsPage(url) {
+    const html = await fetchWithHttp(url);
+    const parsed = parseSuccessFactorsHtml(html);
+    if (!parsed || isThinScrape(parsed)) {
+        return { error: 'successfactors-empty-description' };
+    }
+    return parsed;
 }
 
 /** @deprecated alias — keep for any external callers */
@@ -379,7 +444,12 @@ async function fetchGreenhouseApi(url) {
     const api = `https://boards-api.greenhouse.io/v1/boards/${board}/jobs/${jobId}?questions=false`;
     const res = await axios.get(api, { timeout: NODE_GOTO_TIMEOUT_MS, validateStatus: () => true });
     if (res.status === 404 || (res.data && res.data.status === 404)) {
-        return { error: `greenhouse-job-not-found: board=${parsed.board} job=${jobId}` };
+        const inferred = parsed.shape === 'company_gh_jid';
+        return {
+            error: inferred
+                ? `greenhouse-inferred-job-not-found: board=${parsed.board} job=${jobId}`
+                : `greenhouse-job-not-found: board=${parsed.board} job=${jobId}`
+        };
     }
     if (res.status !== 200 || !res.data || !res.data.title) {
         return { error: `greenhouse-api-${res.status}` };
@@ -462,6 +532,127 @@ async function fetchAshbyApi(url) {
 }
 
 /**
+ * Gem ATS public careers pages: https://jobs.gem.com/<board>/<extId>
+ * Uses GraphQL batch (header batch:true) — SPA HTML alone has no JD.
+ */
+function parseGemJobUrl(url) {
+    const m = String(url || '').match(
+        /^https?:\/\/(?:www\.)?jobs\.gem\.com\/([^/?#]+)\/([^/?#]+)/i
+    );
+    if (!m) return null;
+    const boardId = decodeURIComponent(m[1]).trim();
+    const extId = decodeURIComponent(m[2]).trim();
+    if (!boardId || !extId || /^(api|static|assets)$/i.test(boardId)) return null;
+    return { boardId, extId };
+}
+
+async function fetchGemApi(url) {
+    const parsed = parseGemJobUrl(url);
+    if (!parsed) return null;
+    const { boardId, extId } = parsed;
+    const endpoint = 'https://jobs.gem.com/api/public/graphql/batch';
+    const payload = [{
+        operationName: 'ExternalJobPostingQuery',
+        variables: { boardId, extId },
+        query: `query ExternalJobPostingQuery($boardId: String!, $extId: String!) {
+          oatsExternalJobPosting(boardId: $boardId, extId: $extId) {
+            id title descriptionHtml extId
+            locations { id name city isoCountry isRemote }
+            job { id department { id name } locationType employmentType }
+            jobPostSectionHtml { introHtml outroHtml }
+            compensationHtml
+          }
+          jobBoardExternal(vanityUrlPath: $boardId) {
+            id teamDisplayName pageTitle
+          }
+        }`
+    }];
+    let envelopes;
+    try {
+        const res = await axios.post(endpoint, payload, {
+            timeout: NODE_GOTO_TIMEOUT_MS,
+            validateStatus: () => true,
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                batch: 'true',
+                Origin: 'https://jobs.gem.com',
+                Referer: `https://jobs.gem.com/${encodeURIComponent(boardId)}/${encodeURIComponent(extId)}`
+            }
+        });
+        if (res.status !== 200) return { error: `gem-api-${res.status}` };
+        const raw = res.data;
+        envelopes = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    } catch (err) {
+        return { error: `gem-api-error: ${err.message}` };
+    }
+
+    const env = envelopes.find((e) => e && e.data && e.data.oatsExternalJobPosting)
+        || envelopes[0];
+    const posting = env?.data?.oatsExternalJobPosting;
+    if (!posting || !posting.title) {
+        // Fallback: public REST job board list (titles + HTML content).
+        try {
+            const rest = await axios.get(
+                `https://api.gem.com/job_board/v0/${encodeURIComponent(boardId)}/job_posts/`,
+                { timeout: NODE_GOTO_TIMEOUT_MS, validateStatus: () => true }
+            );
+            if (rest.status === 200 && Array.isArray(rest.data)) {
+                const pick = rest.data.find((j) => {
+                    const abs = String(j.absolute_url || j.url || '');
+                    const id = String(j.id || j.external_id || j.ext_id || '');
+                    return abs.includes(extId)
+                        || id === extId
+                        || abs.endsWith(`/${extId}`);
+                });
+                if (pick) {
+                    const description = stripHtml(pick.content || pick.description || '') || null;
+                    if (description && description.length >= 40) {
+                        return {
+                            title: (pick.title || pick.name || '').trim() || null,
+                            company: String(boardId).replace(/-/g, ' ')
+                                .replace(/\b\w/g, (c) => c.toUpperCase()),
+                            location: pick.location || pick.locations || null,
+                            description,
+                            gem: { boardId, extId }
+                        };
+                    }
+                }
+            }
+        } catch (_) { /* ignore REST fallback */ }
+        return { error: `gem-posting-not-found: board=${boardId} id=${extId}` };
+    }
+
+    const boardMeta = env?.data?.jobBoardExternal || {};
+    const sections = posting.jobPostSectionHtml || {};
+    const htmlParts = [
+        sections.introHtml,
+        posting.descriptionHtml,
+        posting.compensationHtml,
+        sections.outroHtml
+    ].filter(Boolean).join('\n');
+    const description = stripHtml(htmlParts) || null;
+    if (!description || description.length < 40) {
+        return { error: 'gem-empty-description' };
+    }
+    const locs = Array.isArray(posting.locations) ? posting.locations : [];
+    const location = locs.map((l) => l?.name || l?.city).filter(Boolean).join('; ')
+        || (locs.some((l) => l?.isRemote) ? 'Remote' : null);
+    const company = (boardMeta.teamDisplayName || boardMeta.pageTitle || '')
+        .replace(/\s+careers$/i, '')
+        .trim()
+        || String(boardId).replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+    return {
+        title: String(posting.title || '').trim() || null,
+        company: company || null,
+        location: location || null,
+        description,
+        gem: { boardId, extId, id: posting.id || null }
+    };
+}
+
+/**
  * Workday public CXS JSON API.
  * URL: https://{company}.wdN.myworkdayjobs.com/{site}/job/{loc}/{slug}
  * API: https://{company}.wdN.myworkdayjobs.com/wday/cxs/{company}/{site}/job/{slug}
@@ -523,16 +714,19 @@ async function fetchWorkdayCxs(url) {
 
 async function fetchStructuredAts(url) {
     try {
-        if (isGreenhouseUrl(url) || /greenhouse\.io/i.test(url)) {
-            // Normalize embed → classic /jobs/<id> so the boards API always matches.
-            return await fetchGreenhouseApi(greenhouseScrapeUrl(url) || url);
+        if (isGreenhouseUrl(url) || /greenhouse\.io/i.test(url) || parseGreenhouseBoardAndJob(url)) {
+            // Parse embed / company ?gh_jid= here so inferred-board
+            // 404s stay distinguishable from a real greenhouse.io miss.
+            return await fetchGreenhouseApi(url);
         }
         if (isLeverUrl(url) || /lever\.co/i.test(url)) {
             // Apply pages omit the JD; scrape the posting URL instead.
             return await fetchLeverApi(leverScrapeUrl(url) || url);
         }
         if (/ashbyhq\.com/i.test(url)) return await fetchAshbyApi(url);
+        if (/jobs\.gem\.com/i.test(url)) return await fetchGemApi(url);
         if (/myworkdayjobs\.com/i.test(url)) return await fetchWorkdayCxs(url);
+        if (isSuccessFactorsCareerUrl(url)) return await fetchSuccessFactorsPage(url);
     } catch (err) {
         console.warn('[scraper] structured ATS fetch failed:', err.message);
         return { error: `structured-ats-error: ${err.message}` };
@@ -558,10 +752,13 @@ async function nodeFetch(url) {
         // faster and more reliable than HTML parsing for these hosts.
         const structured = await fetchStructuredAts(pageUrl);
         if (structured && structured.error) {
-            // Definite miss (404 / wrong id) — do NOT fall through to
-            // the board index HTML, which would store "All Jobs".
-            // Soft misses (empty) may still try HTML below.
-            if (/not-found|404/i.test(String(structured.error))) {
+            // Greenhouse boards API 404 is authoritative. Gem GraphQL
+            // misses are also definitive (SPA HTML has no JD). Lever EU
+            // boards often 404 on api.lever.co while the posting HTML
+            // (without /apply) is public — fall through to HTML.
+            if (/greenhouse-job-not-found|gem-posting-not-found|gem-empty-description|gem-api-/i.test(
+                String(structured.error)
+            )) {
                 return structured;
             }
         }
@@ -668,5 +865,7 @@ module.exports = {
     greenhouseScrapeUrl,
     isGreenhouseUrl,
     leverScrapeUrl,
-    isLeverUrl
+    isLeverUrl,
+    parseGemJobUrl,
+    fetchGemApi
 };

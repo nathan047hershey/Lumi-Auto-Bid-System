@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { generateResume, buildResumeDocx, sanitizeForFilename } = require('./resumeService');
+const { generateResume, buildResumeDocx, buildArchiveResumeFilename, writeReadyResumeCopy, buildUploadResumeFilename } = require('./resumeService');
+const { asNodeBuffer } = require('../utils/asNodeBuffer');
 const {
     validateResumeHtml,
     buildStackValidationFeedback
@@ -256,16 +257,18 @@ async function generateValidatedDraft(profile, jobDescription, providedCompany, 
             : (lastValidation.pass ? 'pending' : 'failed'),
         is_finalized: !!finalized,
         resume_filename: finalized?.filename || null,
+        resume_upload_filename: finalized?.upload_filename || null,
         resume_pdf_filename: finalized?.pdf_filename || null
     };
 }
 
-function writeResumeFile(resumesDir, profile, companyName, resumeBuffer) {
-    const timestamp = Date.now();
-    const fname = `resume_${sanitizeForFilename(profile.first_name)}_${sanitizeForFilename(profile.last_name)}_${sanitizeForFilename(companyName)}_${timestamp}.docx`;
+async function writeResumeFile(resumesDir, profile, companyName, resumeBuffer) {
+    const fname = buildArchiveResumeFilename(profile, companyName, Date.now(), '.docx');
     const filepath = path.join(resumesDir, fname);
-    fs.writeFileSync(filepath, resumeBuffer);
-    return fname;
+    const buf = await asNodeBuffer(resumeBuffer);
+    fs.writeFileSync(filepath, buf);
+    const uploadFilename = await writeReadyResumeCopy(buf, profile);
+    return { filename: fname, upload_filename: uploadFilename || buildUploadResumeFilename(profile) };
 }
 
 async function finalizeDraftToDocx({
@@ -284,7 +287,9 @@ async function finalizeDraftToDocx({
         font
     });
 
-    const filename = writeResumeFile(resumesDir, profile, companyName, resumeBuffer);
+    const written = await writeResumeFile(resumesDir, profile, companyName, resumeBuffer);
+    const filename = written.filename;
+    const uploadFilename = written.upload_filename;
 
     // PDF is built on Export PDF (or lazily later). Auto-writing PDF here
     // launches Chromium and routinely adds 5–20s to every Customize Resume.
@@ -303,6 +308,7 @@ async function finalizeDraftToDocx({
         resumeBuffer,
         resumeHtml: draftHtml,
         filename,
+        upload_filename: uploadFilename,
         pdf_filename: pdfFilename,
         template_id: templateId || null,
         font_family: font || 'Arial'

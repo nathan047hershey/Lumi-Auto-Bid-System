@@ -157,6 +157,22 @@ checks.push([
     isFailureEvent('tab_closed') === false
 ]);
 checks.push([
+    'job_expired is not hard failure',
+    isFailureEvent('job_expired') === false
+]);
+checks.push([
+    'job_expired course is EXPIRED',
+    courseRunStatus({ last_event_type: 'job_expired' }).short === 'EXPIRED'
+]);
+checks.push([
+    'failureLabel Expired',
+    failureLabel('job_expired') === 'Expired'
+]);
+checks.push([
+    'liveStatusComment job expired',
+    /no longer open/i.test(liveStatusComment({ eventType: 'job_expired' }))
+]);
+checks.push([
     'item_aborted Tab closed is not hard failure',
     isFailureEvent('item_aborted', { error: 'Tab closed' }) === false
 ]);
@@ -240,6 +256,77 @@ checks.push([
 ]);
 checks.push(['failureLabel Time limit', failureLabel('bid_budget_exceeded', { limitMs: 90000 }) === 'Time limit']);
 checks.push(['failureLabel Tab closed', failureLabel('tab_closed') === 'Tab closed']);
+
+const accessDenied = 'Application not found or access denied';
+const thankYouThenAbort = lastStatusEvent([
+    { event_type: 'awaiting_manual_submit', meta: { filled: 12 } },
+    { event_type: 'item_aborted', meta: { error: accessDenied } }
+]);
+checks.push([
+    'thank-you + access-denied abort → marked_applied',
+    thankYouThenAbort.event_type === 'marked_applied'
+]);
+
+const runAccessDenied = courseRunStatus({
+    outcome: 'unknown',
+    filled_at: '2026-04-08T20:00:00.000Z',
+    last_event_type: 'item_aborted',
+    last_event_meta: { error: accessDenied },
+    updated_at: new Date().toISOString()
+});
+checks.push([
+    'courseRunStatus SUCCESS after mark-applied 404',
+    runAccessDenied.kind === 'success' && runAccessDenied.short === 'SUCCESS'
+]);
+
+const runAccessDeniedEvents = courseRunStatus({
+    outcome: 'unknown',
+    last_event_type: 'item_aborted',
+    last_event_meta: { error: accessDenied },
+    events: [
+        { event_type: 'awaiting_manual_submit' },
+        { event_type: 'item_aborted', meta: { error: accessDenied } }
+    ]
+});
+checks.push([
+    'courseRunStatus SUCCESS from events after access-denied abort',
+    runAccessDeniedEvents.kind === 'success' && runAccessDeniedEvents.short === 'SUCCESS'
+]);
+
+const runTrueSkip = courseRunStatus({
+    outcome: 'unknown',
+    last_event_type: 'item_aborted',
+    last_event_meta: { error: accessDenied }
+});
+checks.push([
+    'access-denied abort without fill stays SKIPPED',
+    runTrueSkip.short === 'SKIPPED'
+]);
+
+const runCaptchaAfterThanks = courseRunStatus({
+    outcome: 'unknown',
+    filled_at: '2026-09-08T23:00:00.000Z',
+    last_event_type: 'needs_captcha',
+    last_event_meta: { vendor: 'recaptcha', phase: 'autofill_pre_submit' },
+    screenshots: [{ stage: 'after_submit', created_at: '2026-09-08T23:10:00.000Z' }]
+});
+checks.push([
+    'thank-you proof after captcha event → SUCCESS',
+    runCaptchaAfterThanks.kind === 'success' && runCaptchaAfterThanks.short === 'SUCCESS'
+]);
+
+const progressAccessDenied = bidStageProgress({
+    events: [
+        { event_type: 'awaiting_manual_submit' },
+        { event_type: 'item_aborted', meta: { error: accessDenied } }
+    ],
+    lastEventType: 'item_aborted',
+    lastEventMeta: { error: accessDenied }
+});
+checks.push([
+    'bidStageProgress SUCCESS after access-denied abort',
+    progressAccessDenied.tone === 'emerald' && /SUCCESS/i.test(progressAccessDenied.label)
+]);
 
 let failed = 0;
 for (const [name, ok] of checks) {

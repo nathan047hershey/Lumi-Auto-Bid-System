@@ -34,9 +34,16 @@ const {
     withTransaction, txRunQuery, getDb
 } = require('../config/database');
 const resumeService = require('./resumeService');
+const { asNodeBuffer } = require('../utils/asNodeBuffer');
 const templateService = require('./templateService');
 const userTemplateService = require('./userTemplateService');
 const resumeQueue = require('./resumeQueueService');
+const { evaluateBidEligibility } = require('./bidEligibilityRules');
+const {
+    sqliteUtcToIso,
+    parseSqliteUtcMs,
+    generationDurationMs
+} = require('../lib/generationClock');
 
 // Tunables via env so admins can throttle in prod without code changes.
 // All values are also mutable at runtime via the
@@ -176,6 +183,59 @@ function scoreProfile(profile, jobLink) {
  * fall back to same-techstack any-region so EU/Brazil jobs still
  * get CVs when profiles are US-tagged (common in this product).
  */
+function loadPriorAppliedForProfile(profileId) {
+    return loadPriorAppliedForProfiles([profileId]).get(Number(profileId)) || [];
+}
+
+/** Batch prior applied rows for many profiles (avoids N+1 in pickTopProfiles). */
+function loadPriorAppliedForProfiles(profileIds) {
+    const map = new Map();
+    const ids = [...new Set((profileIds || []).map((id) => Number(id)).filter((id) => id > 0))];
+    for (const id of ids) map.set(id, []);
+    if (!ids.length) return map;
+    const rows = getAll(`
+        SELECT prev.id, prev.profile_id, prev.company_name, prev.job_role,
+               prev.job_description, prev.core_skills, prev.status,
+               prev.updated_at, prev.created_at,
+               jl.techstack AS link_techstack,
+               (
+                 SELECT bc.applied_at FROM bid_courses bc
+                  WHERE bc.application_id = prev.id
+                  ORDER BY bc.id DESC LIMIT 1
+               ) AS applied_at
+          FROM job_applications prev
+          LEFT JOIN job_links jl ON jl.id = prev.job_link_id
+         WHERE prev.profile_id IN (${ids.map(() => '?').join(',')})
+           AND COALESCE(prev.status, '') = 'applied'
+    `, ids);
+    for (const p of rows) {
+        const key = Number(p.profile_id);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(p);
+    }
+    return map;
+}
+
+/**
+ * Company / stack / same-job / cooldown gates before generating a CV.
+ */
+function canEnqueueForCompanyRules(jobLink, profileId, priorsByProfileId = null) {
+    const candidate = {
+        id: 0,
+        profile_id: profileId,
+        company_name: jobLink.company_name,
+        job_role: jobLink.position_title,
+        job_description: jobLink.job_description,
+        core_skills: jobLink.techstack || '',
+        techstack: jobLink.techstack || '',
+        link_techstack: jobLink.techstack || ''
+    };
+    const priors = priorsByProfileId
+        ? (priorsByProfileId.get(Number(profileId)) || [])
+        : loadPriorAppliedForProfile(profileId);
+    return evaluateBidEligibility(candidate, priors);
+}
+
 function pickTopProfiles(jobLink, limit = MAX_PROFILES_PER_JOB()) {
     const techstack = jobLink.techstack;
     const jobRegion = jobLink.location_flag || 'US';
@@ -212,10 +272,16 @@ function pickTopProfiles(jobLink, limit = MAX_PROFILES_PER_JOB()) {
     );
 
     const scored = [];
+    const candidateIds = profiles
+        .map((p) => p.id)
+        .filter((id) => !existingAppProfileIds.has(id));
+    const priorsByProfileId = loadPriorAppliedForProfiles(candidateIds);
     for (const p of profiles) {
         if (existingAppProfileIds.has(p.id)) continue;
         p.techstacks = techByProfile.get(p.id) || [];
         if (techstack && !(p.techstacks || []).includes(techstack)) continue;
+        const companyGate = canEnqueueForCompanyRules(jobLink, p.id, priorsByProfileId);
+        if (!companyGate.ok) continue;
         const s = scoreProfile(p, jobLink);
         if (s == null) continue;
         scored.push({ profile: p, score: s });
@@ -244,19 +310,87 @@ function resolveTemplateSpecForProfile(profile) {
     const tid = profile.preferred_template_id;
     const kind = profile.preferred_template_kind || 'admin';
     if (!tid) {
-        return { styleSpec: null, templateId: null, source: 'admin' };
+        return {
+            styleSpec: templateService.resolveStyleSpec({ templateId: null }),
+            templateId: null,
+            source: 'admin'
+        };
     }
     if (kind === 'user') {
-        const spec = userTemplateService.resolveStyleSpecAnyOwner(tid);
-        return spec
-            ? { styleSpec: spec, templateId: tid, source: 'user' }
-            : { styleSpec: null, templateId: null, source: 'admin' };
+        const spec = userTemplateService.resolveStyleSpecAnyOwner(tid)
+            || templateService.resolveStyleSpec({ templateId: null });
+        return {
+            styleSpec: spec,
+            templateId: tid,
+            source: 'user'
+        };
     }
     return {
         styleSpec: templateService.resolveStyleSpec({ templateId: tid }),
         templateId: tid,
         source: 'admin'
     };
+}
+
+function pickFontFromStyleSpec(styleSpec, font = null) {
+    const explicit = templateService.normaliseFontName(font);
+    if (explicit) return explicit;
+    const pool = Array.isArray(styleSpec?.body?.font_pool)
+        ? styleSpec.body.font_pool
+            .map((f) => templateService.normaliseFontName(f))
+            .filter(Boolean)
+        : [];
+    if (pool.length > 0) {
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+    return templateService.normaliseFontName(styleSpec?.body?.font)
+        || templateService.normaliseFontName(styleSpec?.fonts?.body)
+        || 'Arial';
+}
+
+/**
+ * Live template + font the profile is assigned right now. Used both
+ * to stamp the application row (so the card shows template #N / font
+ * before the DOCX exists) and to drive generateResumeForPair.
+ */
+function intendedTemplateForProfile(profile, font = null) {
+    const resolved = resolveTemplateSpecForProfile(profile);
+    return {
+        ...resolved,
+        font: pickFontFromStyleSpec(resolved.styleSpec, font)
+    };
+}
+
+function stampProfileTemplateOnApplication(applicationId, profile, font = null) {
+    const intended = intendedTemplateForProfile(profile, font);
+    runQuery(
+        `UPDATE job_applications
+         SET template_id = ?, font_family = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [intended.templateId || null, intended.font || 'Arial', applicationId]
+    );
+    saveDatabase();
+    return intended;
+}
+
+/** Queue a CV without starting the live Generating clock (serial worker). */
+function markApplicationQueuedForGeneration(applicationId, profile) {
+    const intended = intendedTemplateForProfile(profile);
+    runQuery(
+        `UPDATE job_applications
+         SET generation_status = 'pending',
+             generation_error = NULL,
+             generation_started_at = NULL,
+             generation_finished_at = NULL,
+             generation_ms = NULL,
+             template_id = ?,
+             font_family = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [intended.templateId || null, intended.font || 'Arial', applicationId]
+    );
+    saveDatabase();
+    return intended;
 }
 
 /**
@@ -266,44 +400,36 @@ function resolveTemplateSpecForProfile(profile) {
  * generation failure; callers decide whether to retry / mark the
  * row failed.
  */
-async function generateResumeForPair(profile, jobLink, font = null) {
-    const { styleSpec, templateId, source } = resolveTemplateSpecForProfile(profile);
+async function generateResumeForPair(profile, jobLink, font = null, genOptions = {}) {
+    const { styleSpec, templateId, source, font: resolvedFont } = intendedTemplateForProfile(profile, font);
     const jobDescription = jobLink.job_description || '';
     const companyName = jobLink.company_name || 'Unknown';
     const jobRole = jobLink.position_title || '';
-
-    let resolvedFont = templateService.normaliseFontName(font);
-    if (!resolvedFont) {
-        const pool = Array.isArray(styleSpec?.body?.font_pool)
-            ? styleSpec.body.font_pool
-                .map((f) => templateService.normaliseFontName(f))
-                .filter(Boolean)
-            : [];
-        if (pool.length > 0) {
-            resolvedFont = pool[Math.floor(Math.random() * pool.length)];
-        } else {
-            resolvedFont = templateService.normaliseFontName(styleSpec?.body?.font)
-                || templateService.normaliseFontName(styleSpec?.fonts?.body)
-                || 'Arial';
-        }
-    }
 
     const result = await resumeService.generateResume(
         profile,
         jobDescription,
         companyName,
-        { styleSpec, font: resolvedFont, templateId }
+        {
+            styleSpec,
+            font: resolvedFont,
+            templateId,
+            jobUrl: jobLink.job_apply_url || jobLink.source_url || '',
+            _cvLockHeld: !!genOptions._cvLockHeld
+        }
     );
 
     // Persist the DOCX file. Filename pattern mirrors the route
     // handler so existing /resumes/<file> serving works without
     // any change.
     const fname = result.filename
-        || resumeService.sanitizeForFilename(
-            `resume_${profile.first_name}_${profile.last_name}_${resumeService.sanitizeForFilename(companyName)}_${Date.now()}.docx`
-        );
+        || resumeService.buildArchiveResumeFilename(profile, companyName, Date.now(), '.docx');
     const filepath = path.join(resumesDir, fname);
-    fs.writeFileSync(filepath, result.resumeBuffer);
+    const buf = await asNodeBuffer(result.resumeBuffer);
+    fs.writeFileSync(filepath, buf);
+    const uploadFilename = await resumeService.writeReadyResumeCopy(buf, profile)
+        || result.upload_filename
+        || resumeService.buildUploadResumeFilename(profile);
 
     const pdfFilename = await require('./resumePdfService').writePdfAlongsideDocx({
         resumesDir,
@@ -315,6 +441,7 @@ async function generateResumeForPair(profile, jobLink, font = null) {
 
     return {
         filename: fname,
+        uploadFilename,
         pdfFilename,
         templateId,
         font: resolvedFont,
@@ -395,6 +522,13 @@ function enqueueForPair(jobLink, profile, score) {
         );
         return null;
     }
+    const companyGate = canEnqueueForCompanyRules(jobLink, profile.id);
+    if (!companyGate.ok) {
+        console.log(
+            `[autoApply] skip enqueue profile=${profile.id} job_link=${jobLink.id} (${companyGate.code}: ${companyGate.message})`
+        );
+        return null;
+    }
     let applyUrl = jobLink.job_apply_url || '';
     try {
         const { canonicalizeGreenhouseApplyUrl, isGreenhouseUrl } = require('./scraper/greenhouseUrl');
@@ -402,14 +536,15 @@ function enqueueForPair(jobLink, profile, score) {
             applyUrl = canonicalizeGreenhouseApplyUrl(applyUrl) || applyUrl;
         }
     } catch (_) { /* ignore */ }
+    const intended = intendedTemplateForProfile(profile);
     const ins = runQuery(
         `INSERT INTO job_applications
             (profile_id, company_name, job_role, core_skills,
              job_description, job_url, resume_filename, applier_id,
              status, state, source, job_link_id, match_score,
-             generation_status)
+             generation_status, template_id, font_family)
          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', 'in_progress',
-                 'auto', ?, ?, 'pending')`,
+                 'auto', ?, ?, 'pending', ?, ?)`,
         [
             profile.id,
             jobLink.company_name || 'Unknown',
@@ -419,7 +554,9 @@ function enqueueForPair(jobLink, profile, score) {
             applyUrl,
             null,
             jobLink.id,
-            score
+            score,
+            intended.templateId || null,
+            intended.font || 'Arial'
         ]
     );
     const applicationId = ins.lastInsertRowid;
@@ -436,7 +573,7 @@ function enqueueForPair(jobLink, profile, score) {
  * Throws on failure — the queue layer nacks the message and
  * the row stays in 'pending' / 'failed' for the UI to surface.
  */
-async function processQueuedPair({ profileId, jobLinkId }) {
+async function processQueuedPair({ profileId, jobLinkId, correlationId, force } = {}) {
     const profile = getOne('SELECT * FROM candidate_profiles WHERE id = ?', [profileId]);
     const jobLink = getOne('SELECT * FROM job_links WHERE id = ?', [jobLinkId]);
     if (!profile || !jobLink) {
@@ -472,13 +609,16 @@ async function processQueuedPair({ profileId, jobLinkId }) {
     // is idempotent (NOT EXISTS) but a manual re-enqueue from
     // the UI could land here. Belt-and-braces.
     const existing = getOne(
-        'SELECT id, generation_status FROM job_applications WHERE profile_id = ? AND job_link_id = ?',
+        `SELECT id, generation_status, generation_started_at
+           FROM job_applications WHERE profile_id = ? AND job_link_id = ?`,
         [profileId, jobLinkId]
     );
     if (!existing) {
         throw new Error(`no job_applications row for profile=${profileId} job_link=${jobLinkId}`);
     }
-    if (existing.generation_status === 'ready') {
+    const forceRegen = force === true
+        || /^regen[-_]/i.test(String(correlationId || ''));
+    if (existing.generation_status === 'ready' && !forceRegen) {
         console.log(
             `[autoApply] worker: skip already-ready application id=${existing.id} ` +
             `(job_link=${jobLinkId} profile=${profileId})`
@@ -486,64 +626,105 @@ async function processQueuedPair({ profileId, jobLinkId }) {
         return { skipped: true };
     }
 
-    // Mark generating while we work so the UI status flips.
-    const genStartedAt = Date.now();
-    runQuery(
-        `UPDATE job_applications
-         SET generation_status = 'generating', updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [existing.id]
-    );
-    saveDatabase();
+    // Re-read the profile's template at worker start so a template
+    // assigned after the row was created is used on this run.
+    const intended = intendedTemplateForProfile(profile);
 
-    try {
-        const gen = await generateResumeForPair(profile, jobLink);
-        const generationMs = Math.max(1, Date.now() - genStartedAt);
-        runQuery(
-            `UPDATE job_applications
-             SET resume_filename = ?, template_id = ?, font_family = ?,
-                 generation_status = 'ready', generation_error = NULL,
-                 generation_ms = ?,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [gen.filename, gen.templateId, gen.font, generationMs, existing.id]
+    // Take the CV lock BEFORE flipping status to `generating`.
+    // Otherwise the UI live timer includes wait time behind another
+    // MiniMax call (manual regenerate + queue, or retry overlap).
+    return resumeService.withCvGenerateLock(async () => {
+        const latest = getOne(
+            `SELECT id, generation_status, generation_started_at
+               FROM job_applications WHERE id = ?`,
+            [existing.id]
         );
-        saveDatabase();
-        try {
-            const bidCourseService = require('./bidCourseService');
-            const assignee = getOne(
-                `SELECT user_id FROM user_profile_assignments WHERE profile_id = ? ORDER BY user_id ASC LIMIT 1`,
-                [profileId]
-            );
-            if (assignee?.user_id) {
-                bidCourseService.recordGenerateDone({
-                    applicationId: existing.id,
-                    profileId,
-                    userId: assignee.user_id,
-                    jobUrl: jobLink.job_apply_url || jobLink.source_url || null,
-                    companyName: jobLink.company_name || null,
-                    jobRole: jobLink.position_title || null,
-                    templateId: gen.templateId,
-                    fontFamily: gen.font,
-                    cvProvider: gen.provider || null
-                });
-            }
-        } catch (courseErr) {
-            console.warn('[autoApply] bid-course generate_done log failed:', courseErr.message);
+        if (!latest) {
+            throw new Error(`no job_applications row id=${existing.id}`);
         }
-        return { filename: gen.filename };
-    } catch (err) {
+        if (latest.generation_status === 'ready' && !forceRegen) {
+            return { skipped: true };
+        }
+
+        const resetClock = latest.generation_status !== 'generating';
+        const keptStartMs = resetClock ? null : parseSqliteUtcMs(latest.generation_started_at);
         runQuery(
             `UPDATE job_applications
-             SET generation_status = 'failed',
-                 generation_error = ?,
+             SET generation_status = 'generating',
+                 template_id = ?,
+                 font_family = ?,
+                 generation_error = NULL,
+                 generation_started_at = ${resetClock ? "datetime('now')" : "COALESCE(generation_started_at, datetime('now'))"},
+                 generation_finished_at = NULL,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
-            [(err.message || String(err)).slice(0, 500), existing.id]
+            [intended.templateId || null, intended.font || 'Arial', latest.id]
         );
         saveDatabase();
-        throw err;
-    }
+        const stamped = getOne(
+            'SELECT generation_started_at FROM job_applications WHERE id = ?',
+            [latest.id]
+        );
+        const genStartedAt = parseSqliteUtcMs(stamped?.generation_started_at);
+        const startMs = Number.isFinite(genStartedAt)
+            ? genStartedAt
+            : (Number.isFinite(keptStartMs) ? keptStartMs : Date.now());
+
+        try {
+            const gen = await generateResumeForPair(profile, jobLink, intended.font, { _cvLockHeld: true });
+            const finishedAt = Date.now();
+            const generationMs = generationDurationMs(startMs, finishedAt) || Math.max(1, finishedAt - startMs);
+            runQuery(
+                `UPDATE job_applications
+                 SET resume_filename = ?, template_id = ?, font_family = ?,
+                     generation_status = 'ready', generation_error = NULL,
+                     generation_ms = ?,
+                     generation_started_at = COALESCE(generation_started_at, datetime('now')),
+                     generation_finished_at = datetime('now'),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [gen.filename, gen.templateId, gen.font, generationMs, latest.id]
+            );
+            saveDatabase();
+            try {
+                const bidCourseService = require('./bidCourseService');
+                const assignee = getOne(
+                    `SELECT user_id FROM user_profile_assignments WHERE profile_id = ? ORDER BY user_id ASC LIMIT 1`,
+                    [profileId]
+                );
+                if (assignee?.user_id) {
+                    bidCourseService.recordGenerateDone({
+                        applicationId: latest.id,
+                        profileId,
+                        userId: assignee.user_id,
+                        jobUrl: jobLink.job_apply_url || jobLink.source_url || null,
+                        companyName: jobLink.company_name || null,
+                        jobRole: jobLink.position_title || null,
+                        templateId: gen.templateId,
+                        fontFamily: gen.font,
+                        cvProvider: gen.provider || null
+                    });
+                }
+            } catch (courseErr) {
+                console.warn('[autoApply] bid-course generate_done log failed:', courseErr.message);
+            }
+            return { filename: gen.filename };
+        } catch (err) {
+            const failMs = generationDurationMs(startMs, Date.now());
+            runQuery(
+                `UPDATE job_applications
+                 SET generation_status = 'failed',
+                     generation_error = ?,
+                     generation_ms = COALESCE(?, generation_ms),
+                     generation_finished_at = datetime('now'),
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                [(err.message || String(err)).slice(0, 500), failMs, latest.id]
+            );
+            saveDatabase();
+            throw err;
+        }
+    });
 }
 
 /**
@@ -584,7 +765,6 @@ async function processJobLink(jobLink, profileScores) {
 async function reconcileJobLinkAfterMetadataChange(jobLinkId) {
     const jobLink = getOne('SELECT * FROM job_links WHERE id = ?', [jobLinkId]);
     if (!jobLink) return { enqueued: 0 };
-    if (jobLink.fetch_status !== 'success') return { enqueued: 0 };
     if (!jobLink.job_description || !String(jobLink.job_description).trim()) {
         return { enqueued: 0 };
     }
@@ -592,6 +772,29 @@ async function reconcileJobLinkAfterMetadataChange(jobLinkId) {
     if (!profileScores.length) return { enqueued: 0 };
     const enqueued = await processJobLink(jobLink, profileScores);
     return { enqueued };
+}
+
+/**
+ * Enqueue missing CVs for a list of job_links (new profiles on
+ * already-processed jobs). Caps at 50 ids per call so a bulk
+ * refresh cannot stall the API.
+ */
+async function reconcileJobLinks(ids) {
+    const unique = [...new Set((ids || []).map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n) && n > 0))];
+    const limited = unique.slice(0, 50);
+    let enqueued = 0;
+    const results = [];
+    for (const id of limited) {
+        try {
+            const r = await reconcileJobLinkAfterMetadataChange(id);
+            const n = r.enqueued || 0;
+            enqueued += n;
+            results.push({ id, enqueued: n });
+        } catch (err) {
+            results.push({ id, enqueued: 0, error: err.message || String(err) });
+        }
+    }
+    return { enqueued, ids: limited, results };
 }
 
 // -----------------------------------------------------------------------------
@@ -607,27 +810,29 @@ async function reconcileJobLinkAfterMetadataChange(jobLinkId) {
  * to serialize.
  */
 function refreshQueue() {
-    // Find fetched job_links that have NO auto-generated
-    // applications yet. The cron is meant to "kick off" fresh
-    // generations, not re-process already-handled rows — those
-    // are exposed to the user via the detail page (download /
-    // regenerate / mark applied). Pending / generating apps
-    // don't block new rows from being picked up either, since
-    // they're owned by the per-application state machine.
-    //
-    // We order by last_fetched_at ASC so the longest-waiting
-    // fetched rows get priority. Without the LIMIT, this would
-    // walk the entire table on every tick; the cap keeps the
-    // per-tick wall-clock bounded.
+    // Fetched job_links that still need CVs: either never processed,
+    // or a newer matching profile was added after the first pass.
+    // pickTopProfiles skips profiles that already have an application,
+    // so re-visiting a job is cheap when nothing is missing.
     const rows = getAll(`
         SELECT jl.*
         FROM job_links jl
         WHERE jl.fetch_status = 'success'
           AND jl.job_description IS NOT NULL
           AND jl.job_description <> ''
-          AND NOT EXISTS (
-            SELECT 1 FROM job_applications ja
-            WHERE ja.job_link_id = jl.id AND ja.source = 'auto'
+          AND EXISTS (
+            SELECT 1
+            FROM candidate_profiles p
+            WHERE (
+                jl.techstack IS NULL OR EXISTS (
+                    SELECT 1 FROM profile_techstacks t
+                    WHERE t.profile_id = p.id AND t.techstack = jl.techstack
+                )
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM job_applications ja
+                WHERE ja.job_link_id = jl.id AND ja.profile_id = p.id
+            )
           )
         ORDER BY jl.last_fetched_at ASC, jl.id ASC
         LIMIT ?
@@ -670,18 +875,45 @@ function cleanupStaleGenerating() {
 }
 
 /**
+ * The in-process queue dies with the Node process. Any row left in
+ * `generating` at boot is orphaned (nodemon restart, crash, deploy).
+ * Flip them back to pending immediately so the UI does not show a
+ * dozen live clocks, then requeueStuckPendingApplications can pick
+ * them up. The 10-minute stale timeout still covers a hung worker
+ * during a live run.
+ */
+function resetOrphanedGeneratingOnBoot() {
+    try {
+        const r = runQuery(
+            `UPDATE job_applications
+             SET generation_status = 'pending',
+                 generation_started_at = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE generation_status = 'generating'`
+        );
+        if (r.changes > 0) {
+            console.log(`[autoApply] reset ${r.changes} orphaned generating row(s) after process start`);
+            saveDatabase();
+        }
+    } catch (e) {
+        console.warn('[autoApply] resetOrphanedGeneratingOnBoot failed:', e.message);
+    }
+}
+
+/**
  * Re-enqueue auto apps stuck in `pending` with no DOCX.
  *
- * refreshQueue() only creates work for job_links that have *no*
- * auto application yet. Once a pending row exists, a lost queue
- * message (common when RabbitMQ is down and the in-process queue
- * is wiped by a server restart) leaves DOCX/PDF disabled forever.
- * This pass closes that gap.
+ * A lost queue message (common when RabbitMQ is down and the
+ * in-process queue is wiped by a server restart) leaves DOCX/PDF
+ * disabled forever. This pass closes that gap.
  */
 async function requeueStuckPendingApplications() {
+    // RabbitMQ is often down locally — the in-process queue is serial and
+    // MiniMax is ~50–120s/CV. Dumping 48 jobs on boot makes every card
+    // look "stuck generating" for a long time. Cap each tick.
     const limit = Math.max(
-        20,
-        Math.min(80, MAX_JOBS_PER_TICK() * Math.max(1, MAX_PROFILES_PER_JOB()))
+        3,
+        Math.min(5, MAX_JOBS_PER_TICK() * Math.max(1, Math.min(3, MAX_PROFILES_PER_JOB())))
     );
     let rows;
     try {
@@ -722,6 +954,66 @@ async function requeueStuckPendingApplications() {
     return enqueued;
 }
 
+/**
+ * CVs that died on Groq 8k TPM (413 / gpt-oss-120b) should retry on
+ * MiniMax-M2.7. Re-enqueue those failed auto apps once they are still
+ * marked failed with the Groq error string.
+ */
+async function requeueGroq413Failures() {
+    let rows;
+    try {
+        rows = getAll(
+            `SELECT id, profile_id, job_link_id, generation_error
+             FROM job_applications
+             WHERE job_link_id IS NOT NULL
+               AND generation_status = 'failed'
+               AND generation_error IS NOT NULL
+               AND (
+                    lower(generation_error) LIKE '%groq%'
+                    OR lower(generation_error) LIKE '%gpt-oss%'
+                    OR generation_error LIKE '%413%'
+                    OR generation_error LIKE '%instance of Blob%'
+                    OR generation_error LIKE '%data" argument must be of type string%'
+               )
+             ORDER BY id DESC
+             LIMIT 20`,
+            []
+        );
+    } catch (e) {
+        console.warn('[autoApply] requeueGroq413Failures query failed:', e.message);
+        return 0;
+    }
+    if (!rows.length) return 0;
+
+    let enqueued = 0;
+    for (const row of rows) {
+        try {
+            runQuery(
+                `UPDATE job_applications
+                    SET generation_status = 'pending',
+                        generation_error = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                  WHERE id = ?`,
+                [row.id]
+            );
+            await resumeQueue.enqueueGeneration(row.profile_id, row.job_link_id, {
+                correlationId: `requeue-groq413-${row.id}`
+            });
+            enqueued += 1;
+        } catch (err) {
+            console.warn(
+                `[autoApply] requeue Groq-413 failed app=${row.id}:`,
+                err.message || err
+            );
+        }
+    }
+    if (enqueued > 0) {
+        try { saveDatabase(); } catch (_) { /* ignore */ }
+        console.log(`[autoApply] re-queued ${enqueued} failed CV(s) (Groq-413 / DOCX write)`);
+    }
+    return enqueued;
+}
+
 async function tick() {
     if (running || shuttingDown) return;
     running = true;
@@ -730,6 +1022,7 @@ async function tick() {
         // Recover pending rows whose queue messages were lost (e.g.
         // Rabbit down + process restart wiped the in-memory queue).
         await requeueStuckPendingApplications();
+        await requeueGroq413Failures();
         // Refresh the broker's view of queue depth so the admin
         // UI shows the real backlog (not just our optimistic
         // counter from the publish confirm callback).
@@ -770,6 +1063,7 @@ function startCron() {
         console.log('[autoApply] cron disabled via env (AUTO_APPLY_CRON_DISABLED=1)');
         return;
     }
+    resetOrphanedGeneratingOnBoot();
     // Run once immediately on boot (configurable) so the first
     // deploy doesn't have to wait one full interval for the first
     // pass. Then schedule.
@@ -847,6 +1141,9 @@ function listApplicationsForJobLink(jobLinkId) {
         const p = byId.get(a.profile_id) || null;
         return {
             ...a,
+            generation_started_at: sqliteUtcToIso(a.generation_started_at),
+            generation_finished_at: sqliteUtcToIso(a.generation_finished_at),
+            generation_updated_at: sqliteUtcToIso(a.updated_at),
             profile: p
                 ? {
                     ...p,
@@ -968,6 +1265,29 @@ function listMatchedProfilesForJobLink(jobLinkId) {
     return pool;
 }
 
+function isBidApplied(app) {
+    if (!app) return false;
+    if (app.bid_applied_at || app.bid_outcome === 'applied' || app.status === 'applied') return true;
+    const t = String(app.bid_last_event || '');
+    if (/marked_applied|submitted_ok|mark_applied|submit_success_detected/i.test(t)) return true;
+    const meta = typeof app.bid_last_meta === 'string'
+        ? app.bid_last_meta
+        : JSON.stringify(app.bid_last_meta || {});
+    if (/^item_aborted$/i.test(t) && app.bid_filled_at && /application not found or access denied/i.test(meta)) {
+        return true;
+    }
+    return false;
+}
+
+function profileChipRank(p) {
+    if (p.bid_applied || p.status === 'applied') return 0;
+    if (p.status === 'interview') return 1;
+    if (p.bid_filled) return 2;
+    if (p.generation_status === 'ready') return 3;
+    if (p.status === 'rejected' || p.state === 'rejected' || p.state === 'cancelled') return 4;
+    return 5;
+}
+
 /**
  * Attach available (matched) profiles + application state to a page of
  * job_links rows. Used by GET /job-links so the directory list can show
@@ -1008,8 +1328,12 @@ function attachAvailableProfilesToJobLinks(jobLinks) {
     const placeholders = linkIds.map(() => '?').join(',');
     const apps = getAll(
         `SELECT a.id, a.job_link_id, a.profile_id, a.generation_status, a.generation_ms,
-                a.status, a.state, a.match_score, a.updated_at,
-                c.filled_at AS bid_filled_at, c.applied_at AS bid_applied_at, c.outcome AS bid_outcome
+                a.generation_started_at, a.generation_finished_at, a.status, a.state, a.match_score, a.updated_at,
+                c.filled_at AS bid_filled_at, c.applied_at AS bid_applied_at, c.outcome AS bid_outcome,
+                (SELECT e.event_type FROM bid_course_events e
+                  WHERE e.course_id = c.id ORDER BY e.id DESC LIMIT 1) AS bid_last_event,
+                (SELECT e.meta_json FROM bid_course_events e
+                  WHERE e.course_id = c.id ORDER BY e.id DESC LIMIT 1) AS bid_last_meta
            FROM job_applications a
            LEFT JOIN bid_courses c ON c.application_id = a.id
           WHERE a.job_link_id IN (${placeholders})`,
@@ -1020,7 +1344,12 @@ function attachAvailableProfilesToJobLinks(jobLinks) {
         if (!appsByLink.has(a.job_link_id)) appsByLink.set(a.job_link_id, new Map());
         // Prefer the row that has the strongest bid signal if duplicates somehow appear.
         const prev = appsByLink.get(a.job_link_id).get(a.profile_id);
-        if (!prev || (a.bid_applied_at && !prev.bid_applied_at) || (a.bid_filled_at && !prev.bid_filled_at)) {
+        if (
+            !prev
+            || (isBidApplied(a) && !isBidApplied(prev))
+            || (a.bid_applied_at && !prev.bid_applied_at)
+            || (a.bid_filled_at && !prev.bid_filled_at)
+        ) {
             appsByLink.get(a.job_link_id).set(a.profile_id, a);
         }
     }
@@ -1035,12 +1364,15 @@ function attachAvailableProfilesToJobLinks(jobLinks) {
         application_id: app?.id ?? null,
         generation_status: app?.generation_status ?? null,
         generation_ms: app?.generation_ms != null ? Number(app.generation_ms) : null,
-        generation_updated_at: app?.updated_at ?? null,
+        generation_started_at: sqliteUtcToIso(app?.generation_started_at),
+        generation_finished_at: sqliteUtcToIso(app?.generation_finished_at),
+        generation_updated_at: sqliteUtcToIso(app?.updated_at),
         status: app?.status ?? null,
         state: app?.state ?? null,
-        bid_filled: !!(app?.bid_filled_at || app?.bid_outcome === 'applied' || app?.bid_applied_at),
+        bid_filled: !!(app?.bid_filled_at || isBidApplied(app)),
         bid_outcome: app?.bid_outcome ?? null,
-        bid_applied: !!(app?.bid_applied_at || app?.bid_outcome === 'applied' || app?.status === 'applied')
+        bid_applied: isBidApplied(app),
+        bid_applied_at: app?.bid_applied_at ? sqliteUtcToIso(app.bid_applied_at) : null
     });
 
     return jobLinks.map((jobLink) => {
@@ -1076,6 +1408,9 @@ function attachAvailableProfilesToJobLinks(jobLinks) {
         }
 
         pool.sort((a, b) => {
+            const ra = profileChipRank(a);
+            const rb = profileChipRank(b);
+            if (ra !== rb) return ra - rb;
             if (!!b.region_match !== !!a.region_match) return b.region_match ? 1 : -1;
             return (b.score || 0) - (a.score || 0);
         });
@@ -1157,7 +1492,11 @@ module.exports = {
     scoreProfile,
     pickTopProfiles,
     generateResumeForPair,
+    intendedTemplateForProfile,
+    stampProfileTemplateOnApplication,
+    markApplicationQueuedForGeneration,
     enqueueForPair,
+    canEnqueueForCompanyRules,
     processQueuedPair,
     processJobLink,
     refreshQueue,
@@ -1169,6 +1508,7 @@ module.exports = {
     listMatchedProfilesForJobLink,
     attachAvailableProfilesToJobLinks,
     reconcileJobLinkAfterMetadataChange,
+    reconcileJobLinks,
     // Status (for /health-style endpoint)
     getStatus() {
         return {

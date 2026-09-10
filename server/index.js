@@ -30,8 +30,13 @@ const PORT = process.env.PORT || 9017;
 app.use(cors({
     // Vite client + Chrome extension (Mode 1 bidder). Extensions send an
     // Origin like chrome-extension://<id>; allow those plus local dev.
+    // Also allow all origins in production (Render deployments)
     origin(origin, callback) {
         if (!origin) return callback(null, true);
+        if (process.env.NODE_ENV === 'production') {
+            // Allow all origins in production
+            return callback(null, true);
+        }
         if (
             origin === 'http://localhost:5173'
             || origin === 'http://localhost:3000'
@@ -207,6 +212,11 @@ async function startServer() {
         } catch (err) {
             console.warn('[boot] Outlook mail service skipped:', err.message);
         }
+        try {
+            require('./services/gmailImapService').startGmailImapService();
+        } catch (err) {
+            console.warn('[boot] Gmail IMAP (free) service skipped:', err.message);
+        }
 
         // Graceful shutdown — make sure the in-flight scrape gets a
         // chance to finish before the process exits. PM2 sends
@@ -215,6 +225,7 @@ async function startServer() {
         const shutdown = async () => {
             console.log('Shutting down — stopping workers...');
             try { require('./services/outlookMailService').stopOutlookMailService(); } catch (_) { /* ignore */ }
+            try { require('./services/gmailImapService').stopGmailImapService(); } catch (_) { /* ignore */ }
             try { await shutdownProvider(); } catch (_) { /* ignore */ }
             try { await jobDetailFetchService.closeQueue(); } catch (_) { /* ignore */ }
             try { await stopAutoApplyCron(); } catch (_) { /* ignore */ }

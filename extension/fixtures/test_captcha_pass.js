@@ -2,7 +2,7 @@
  * CAPTCHA pass engineer heuristics (mirrors classifyCaptchaOrLogin).
  * Run: node extension/fixtures/test_captcha_pass.js
  */
-import { classifyCaptchaOrLogin, isBlockingCaptchaWall } from '../lib/captchaPass.js';
+import { classifyCaptchaOrLogin, isBlockingCaptchaWall, looksLikeThankYouPage } from '../lib/captchaPass.js';
 
 const checks = [];
 
@@ -150,6 +150,22 @@ checks.push([
         'gh form+robot still pauses at submit with helper',
         isBlockingCaptchaWall(gh, { formReady: true, forSubmit: true, captchaHelper: true }) === true
     ]);
+}
+{
+    const thanks = 'Thank you for your application. We\'re excited to learn more about you! Your application has been routed to our Talent Acquisition team.';
+    checks.push(['zoominfo thank-you is thank-you page', looksLikeThankYouPage(thanks) === true]);
+    const classified = classifyCaptchaOrLogin({
+        text: thanks,
+        html: '<iframe src="https://www.google.com/recaptcha/api2/anchor"></iframe><div class="g-recaptcha"></div>',
+        hasWidget: true
+    });
+    checks.push(['thank-you + leftover recaptcha is NOT captcha', classified.captcha === false]);
+    checks.push(['thank-you + leftover recaptcha is NOT login', classified.login === false]);
+    checks.push(['thank-you wall not blocking at submit', isBlockingCaptchaWall(classified, {
+        formReady: false,
+        forSubmit: true,
+        captchaHelper: true
+    }) === false]);
 }
 
 const failed = checks.filter(([, ok]) => !ok);

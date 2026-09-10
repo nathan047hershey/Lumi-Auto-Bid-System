@@ -1,0 +1,61 @@
+[
+  {
+    "id": "question_6527794009",
+    "label": "Do you require any type of visa sponsorship now or in the future to work in the United States?*",
+    "answer": "No",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "requires_sponsorship",
+    "knockout": true
+  },
+  {
+    "id": "question_6527790009",
+    "label": "How many years of software development experience do you have?*",
+    "answer": "6 years",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "question_6527791009",
+    "label": "Do you have experience working for a software/AI company?*",
+    "answer": "Yes",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "question_6527792009",
+    "label": "Do you have experience working on EHR integrations?*",
+    "answer": "No",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "question_6527793009",
+    "label": "Where are you currently based?*",
+    "answer": "Palo Alto, CA",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Palo Alto, CA, 94306",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

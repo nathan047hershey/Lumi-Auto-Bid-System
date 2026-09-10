@@ -17,6 +17,9 @@ const ashbyApp = 'https://jobs.ashbyhq.com/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeee
 
 checks.push(['oracle host', detectAtsFromUrl(oracleUrl).id === 'oracle']);
 checks.push(['greenhouse host', detectAtsFromUrl('https://job-boards.greenhouse.io/embed/job_app?for=acme&token=1').id === 'greenhouse']);
+const zoominfoUrl = 'https://www.zoominfo.com/careers/jr107373/principal-software-engineer-data?gh_src=-d14a9e1e2&gh_jid=-8486808002';
+checks.push(['zoominfo gh_jid is greenhouse', detectAtsFromUrl(zoominfoUrl).id === 'greenhouse']);
+checks.push(['zoominfo gh_jid isGreenhouseUrl', isGreenhouseUrl(zoominfoUrl)]);
 checks.push(['oracle not greenhouse', !isGreenhouseUrl(oracleUrl)]);
 checks.push([
     'oracle url wins over dom greenhouse',
@@ -42,6 +45,7 @@ checks.push(['icims host', detectAtsFromUrl('https://careers-acme.icims.com/jobs
 checks.push(['bamboohr host', detectAtsFromUrl('https://acme.bamboohr.com/careers/12').id === 'bamboohr']);
 checks.push(['smartrecruiters host', detectAtsFromUrl('https://jobs.smartrecruiters.com/Acme/123').id === 'smartrecruiters']);
 checks.push(['linkedin host', detectAtsFromUrl('https://www.linkedin.com/jobs/view/123').id === 'linkedin']);
+checks.push(['rippling host', detectAtsFromUrl('https://ats.rippling.com/acme/jobs/1/apply').id === 'rippling']);
 
 checks.push([
     'linkedin always wins',

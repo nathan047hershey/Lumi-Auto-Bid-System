@@ -238,6 +238,19 @@ export function vendorLabel(vendor) {
     return map[String(vendor || '').toLowerCase()] || String(vendor || 'Challenge');
 }
 
+/** Site thank-you / submitted copy — leftover reCAPTCHA iframes must not count. */
+export const THANK_YOU_PAGE_RE = /thank\s*you\s+for\s+(?:your\s+)?(?:application|applying|submitting)|thanks\s+for\s+(?:your\s+)?(?:application|applying|submitting)|your\s+application\s+has\s+been\s+routed|application\s+(?:has\s+been\s+)?(?:received|submitted)|we\s*(?:['’]?ve|have)\s+received\s+(?:your\s+)?application|successfully\s+submitted(?:\s+your\s+application)?/i;
+
+export function looksLikeThankYouPage(text = '') {
+    const t = String(text || '');
+    if (!THANK_YOU_PAGE_RE.test(t)) return false;
+    // Open apply form that merely mentions "thank you" in a question.
+    const applyFormOpen = /\bfirst\s*name\b/i.test(t)
+        && /\bemail\b/i.test(t)
+        && /\bsubmit(?:\s+application)?\b/i.test(t);
+    return !applyFormOpen;
+}
+
 export function classifyCaptchaOrLogin({
     text = '',
     html = '',
@@ -247,6 +260,24 @@ export function classifyCaptchaOrLogin({
 } = {}) {
     const t = String(text || '').toLowerCase();
     const h = String(html || '').toLowerCase();
+
+    if (looksLikeThankYouPage(t)) {
+        return {
+            captcha: false,
+            login: false,
+            emailOtp: false,
+            widgetHit: !!hasWidget,
+            widgetSolved: true,
+            challengeCopy: false,
+            thankYou: true,
+            vendor: 'none',
+            strategy: 'none',
+            strategyLabel: 'Thank-you page — not a CAPTCHA',
+            helperUseful: false,
+            unattendedWaitMs: 0,
+            recommendedHelpers: []
+        };
+    }
 
     // Hard interstitial copy (Cloudflare / WAF / full-page puzzles).
     // Do NOT treat reCAPTCHA checkbox marketing ("I'm not a robot") as an interstitial —
@@ -316,6 +347,7 @@ export function classifyCaptchaOrLogin({
  */
 export function isBlockingCaptchaWall(wall, { formReady = false, forSubmit = false, captchaHelper = false } = {}) {
     if (!wall) return false;
+    if (wall.thankYou) return false;
     if (wall.login) return true;
     if (wall.emailOtp || /email_otp/i.test(String(wall.vendor || ''))) return true;
     if (!wall.captcha) return false;

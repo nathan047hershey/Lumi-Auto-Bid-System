@@ -1,28 +1,183 @@
-server/database.sqlite
-server/resumes/
-server/uploads/
-server/data/
-server/logs/*.log
-server/*.log
-
-# Environment files (keep .env.example tracked, never the real .env)
+# =============================================================================
+# Environment & Secrets (NEVER commit these)
+# =============================================================================
 .env
 .env.local
 .env.*.local
 !.env.example
+server/.env
 server/local.env
 local.env
+*.pem
+*.key
+*.crt
+credentials.json
+secrets.json
+*.secret
 
-# Playwright / live-test Chromium profiles (never pollute repo root)
+# =============================================================================
+# Database & Uploads
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+server/database.sqlite
+server/resumes/
+server/uploads/
+server/tmp/
+server/db-extra/
+database/*.sqlite
+database/*.db
+
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+logs/
+server/logs/
+server/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# =============================================================================
+# Node.js & Dependencies
+# =============================================================================
+node_modules/
+client/node_modules/
+server/node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =============================================================================
+# Build Outputs
+# =============================================================================
+client/dist/
+client/build/
+server/dist/
+*.egg-info/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+
+# =============================================================================
+# Testing & Coverage
+# =============================================================================
+coverage/
+.nyc_output/
+*.lcov
+*.test.js
+*.spec.js
+__tests__/
+
+# =============================================================================
+# Playwright / Browser Profiles & Temp
+# =============================================================================
 .tmp/
 .tmp-lumi*/
 **/.tmp-lumi*/
+.playwright/
+chromium/
+chrome/
+firefox/
+**/.profile/
+**/.config/
 
-# Dependencies & build
-node_modules/
-client/dist/
-client/node_modules/
-server/node_modules/
-*.log
+# =============================================================================
+# IDE & Editor
+# =============================================================================
+.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
 Thumbs.db
+Thumbs.db:encryptable
+
+# =============================================================================
+# OS Files
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =============================================================================
+# Deployment & Config
+# =============================================================================
+.vercel
+.vercel/output/
+.now/
+dist.zip
+deploy.tar.gz
+*.backup
+
+# =============================================================================
+# Extension Build Outputs
+# =============================================================================
+extension/dist/
+extension/build/
+*.crx
+*.xpi
+*.zip
+
+# =============================================================================
+# Server Specific
+# =============================================================================
+server/data/
+server/data.json
+server/tokens.json
+*.pid
+*.seed
+*.pid.lock
+.serverless/
+
+# =============================================================================
+# Python Virtual Environments
+# =============================================================================
+venv/
+ENV/
+env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =============================================================================
+# Misc
+# =============================================================================
+*.bak
+*.tmp
+*.temp
+.cache/
+.npm/
+.yarn/
+.eslintcache
+.stylelintcache

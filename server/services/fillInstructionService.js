@@ -1,5 +1,6 @@
 /**
- * Turn a user instruction (stuck at FILLED) into structured fill actions via Groq.
+ * Excellent Auto Bidder control assistant — turns short user instructions into
+ * fills, submit, queue control, and re-autofill actions.
  */
 const axios = require('axios');
 const { getAnswersGroqRescueConfig } = require('./settingsService');
@@ -29,17 +30,81 @@ function compactFields(fields) {
         .slice(0, 60);
 }
 
+function profileFacts(profile) {
+    const p = profile || {};
+    const city = String(p.city || '').trim();
+    const state = String(p.state || '').trim();
+    const zip = String(p.postal_code || p.zip || '').trim();
+    const st = /^[A-Z]{2}$/i.test(state) ? state.toUpperCase() : state;
+    const locationLine = [city, st].filter(Boolean).join(', ') + (zip ? ` ${zip}` : '');
+    return {
+        first_name: p.first_name || '',
+        last_name: p.last_name || '',
+        email: p.email || '',
+        phone: p.phone || p.mobile || '',
+        city,
+        state: st,
+        zip,
+        location_line: locationLine.trim(),
+        years_of_experience: p.years_of_experience || '',
+        skills: String(p.skills || p.technical_skills || '').slice(0, 400),
+        current_title: p.current_title || p.title || '',
+        education: String(p.education || p.school || p.degree || '').slice(0, 300),
+        work_auth: 'Yes',
+        sponsorship: 'No',
+        disability: 'No, I do not have a disability',
+        over_18: 'Yes',
+        gender: p.gender || 'Male',
+        race_ethnicity: p.race_ethnicity || '',
+        hispanic_latino: 'No',
+        veteran: p.veteran_status || 'I am not a protected veteran',
+        linkedin: p.linkedin_url || '',
+        work_history: String(p.work_experience || p.experience || '').slice(0, 900)
+    };
+}
+
+function emptyResult(summary, extra = {}) {
+    return {
+        ok: false,
+        fills: [],
+        clickSubmit: false,
+        queueControl: null,
+        reAutofill: false,
+        summary,
+        skipped: true,
+        ...extra
+    };
+}
+
+function okResult(partial) {
+    return {
+        ok: true,
+        fills: [],
+        clickSubmit: false,
+        queueControl: null,
+        reAutofill: false,
+        fieldKey: 'form',
+        issueKey: 'user_instruct',
+        provider: 'local',
+        model: null,
+        ...partial
+    };
+}
+
 /**
  * @returns {Promise<{
  *   ok: boolean,
  *   fills: Array<{id?: string, label: string, answer: string}>,
  *   clickSubmit: boolean,
+ *   queueControl?: 'pause'|'resume'|'stop'|'next'|'skip'|null,
+ *   reAutofill?: boolean,
  *   issueKey?: string,
  *   fieldKey?: string,
  *   summary?: string,
  *   skipped?: boolean,
  *   provider?: string,
- *   model?: string
+ *   model?: string,
+ *   emailOtp?: string
  * }>}
  */
 async function interpretFillInstruction({
@@ -52,35 +117,138 @@ async function interpretFillInstruction({
     companyName = '',
     jobRole = '',
     ats = '',
-    host = ''
+    host = '',
+    jobDescription = ''
 } = {}) {
     const text = String(instruction || '').trim();
     if (!text) {
-        return {
-            ok: false,
-            fills: [],
-            clickSubmit: false,
-            summary: 'Empty instruction',
-            skipped: true
-        };
+        return emptyResult('Empty instruction');
     }
 
     const snapshot = compactFields(fields);
-    const city = String(profile?.city || '').trim();
-    const state = String(profile?.state || '').trim();
-    const zip = String(profile?.postal_code || profile?.zip || '').trim();
-    const st = /^[A-Z]{2}$/i.test(state) ? state.toUpperCase() : state;
-    const locationLine = [city, st].filter(Boolean).join(', ') + (zip ? ` ${zip}` : '');
-    const locationLineTrim = locationLine.trim();
+    const facts = profileFacts(profile);
+    const t = text.toLowerCase();
 
-    // Fast path — location free-text without burning Groq.
+    // --- Queue control (local, instant) ---
+    if (/^(pause|hold|wait|stop\s+for\s+(a\s+)?(sec|moment|minute)|freeze)(\s+queue)?[!?.]*$/i.test(text)
+        || /\bpause\b/.test(t) && !/\bunpause\b|\bresume\b/.test(t) && t.length < 40) {
+        return okResult({
+            queueControl: 'pause',
+            fieldKey: 'queue',
+            issueKey: 'queue|pause',
+            summary: 'Pause queue — fix the form, then say Resume'
+        });
+    }
+    if (/^(resume|continue|unpause|keep\s+going)(\s+(queue|bidding))?[!?.]*$/i.test(text)
+        || /\bresume\s+(queue|bidding|auto)\b/.test(t)) {
+        return okResult({
+            queueControl: 'resume',
+            fieldKey: 'queue',
+            issueKey: 'queue|resume',
+            summary: 'Resume queue'
+        });
+    }
+    if (/^(stop|abort|cancel)(\s+(queue|bidder|all))?[!?.]*$/i.test(text)
+        && !/submit|fill|answer/.test(t)) {
+        return okResult({
+            queueControl: 'stop',
+            fieldKey: 'queue',
+            issueKey: 'queue|stop',
+            summary: 'Stop auto-bidder'
+        });
+    }
+    if (/^(next|skip\s+(this\s+)?job|go\s+to\s+next)[!?.]*$/i.test(text)
+        || /\b(next\s+job|skip\s+(this|job))\b/.test(t) && t.length < 48) {
+        return okResult({
+            queueControl: 'next',
+            fieldKey: 'queue',
+            issueKey: 'queue|next',
+            summary: 'Skip to next job'
+        });
+    }
+    if (/^(skip\s+captcha|skip\s+this\s+captcha)[!?.]*$/i.test(text)
+        || /\bskip\s+captcha\b/.test(t)) {
+        return okResult({
+            queueControl: 'skip',
+            fieldKey: 'captcha',
+            issueKey: 'captcha|skip',
+            summary: 'Skip CAPTCHA / blocked job'
+        });
+    }
+    if (/\b(re-?autofill|refill|fill\s+again|re-?fill\s+(the\s+)?form|run\s+autofill\s+again)\b/i.test(text)
+        && t.length < 80) {
+        return okResult({
+            reAutofill: true,
+            fieldKey: 'form',
+            issueKey: 'form|reautofill',
+            summary: 'Re-run autofill on this apply tab'
+        });
+    }
+
+    // --- Hard policy fills (local) ---
+    if (/\bdisabilit/.test(t) && /\b(no|false|don'?t|do not)\b/.test(t)) {
+        const f = snapshot.find((x) => /disabilit/i.test(x.label));
+        return okResult({
+            fills: [{
+                id: f?.id,
+                label: f?.label || 'Disability Status',
+                answer: 'No, I do not have a disability'
+            }],
+            clickSubmit: /\bsubmit\b/.test(t),
+            fieldKey: 'disability_status',
+            issueKey: 'disability|force_no',
+            summary: 'Disability = No'
+        });
+    }
+    if (/\b(sponsor|visa|h-?1b)\b/.test(t) && /\b(no|false|don'?t|do not|not\s+need)\b/.test(t)) {
+        const f = snapshot.find((x) => /sponsor|visa|h-?1b/i.test(x.label));
+        return okResult({
+            fills: [{
+                id: f?.id,
+                label: f?.label || 'Visa sponsorship',
+                answer: 'No'
+            }],
+            clickSubmit: /\bsubmit\b/.test(t),
+            fieldKey: 'requires_sponsorship',
+            issueKey: 'sponsorship|force_no',
+            summary: 'Visa sponsorship = No'
+        });
+    }
+    if (/\b(authoriz|eligible to work|legally authorized)\b/.test(t) && /\byes\b/.test(t)) {
+        const f = snapshot.find((x) => /authoriz|eligible to work|legally/i.test(x.label));
+        return okResult({
+            fills: [{
+                id: f?.id,
+                label: f?.label || 'Work authorization',
+                answer: 'Yes'
+            }],
+            clickSubmit: /\bsubmit\b/.test(t),
+            fieldKey: 'work_authorization',
+            issueKey: 'work_auth|force_yes',
+            summary: 'Work authorization = Yes'
+        });
+    }
+    if (/\bgender\b/.test(t) && /\bmale\b/.test(t) && !/\bfemale\b/.test(t)) {
+        const f = snapshot.find((x) => /gender|think of yourself/i.test(x.label));
+        return okResult({
+            fills: [{
+                id: f?.id,
+                label: f?.label || 'Gender',
+                answer: facts.gender || 'Male'
+            }],
+            fieldKey: 'gender',
+            issueKey: 'gender|male',
+            summary: `Gender = ${facts.gender || 'Male'}`
+        });
+    }
+
+    // Fast path — location free-text
     if (/location|city|zip|postal/i.test(text) && /type|enter|fill|add|manual|free.?text|city.?state/i.test(text)) {
-        const answer = locationLineTrim
-            || (city && st ? `${city}, ${st}${zip ? ` ${zip}` : ''}` : city);
+        const answer = facts.location_line
+            || (facts.city && facts.state ? `${facts.city}, ${facts.state}${facts.zip ? ` ${facts.zip}` : ''}` : facts.city);
         if (answer) {
             const locField = snapshot.find((f) => /location|city/i.test(f.label)) || null;
-            return {
-                ok: true,
+            return okResult({
                 fills: [{
                     id: locField?.id,
                     label: locField?.label || 'Location (city)',
@@ -89,29 +257,24 @@ async function interpretFillInstruction({
                 clickSubmit: /submit/i.test(text),
                 issueKey: 'location|no_dropdown_match',
                 fieldKey: 'location',
-                summary: 'Location free-text from profile',
-                provider: 'local',
-                model: null
-            };
+                summary: 'Location free-text from profile'
+            });
         }
     }
 
-    // Fast path — Greenhouse / email security code pasted into Instruct Lumi.
-    // Digits: "123456", "code 123456". Alphanumeric: "this is code wFY53Ht3", "code: Ab12Cd34"
+    // Fast path — email OTP
     const otpMatch = text.match(
         /(?:(?:this\s+is\s+(?:the\s+)?)?(?:security|verification|email|one[-\s]?time|otp|pin)\s*(?:code)?\s*(?:is|:|=)?\s*|code\s*(?:is|:|=)?\s*|fill\s+(?:the\s+)?(?:code|otp)\s+)([A-Za-z0-9]{4,12})\b/i
     ) || (/^\s*([A-Za-z0-9]{4,12})\s*$/.test(text) ? text.match(/^\s*([A-Za-z0-9]{4,12})\s*$/) : null);
     if (otpMatch?.[1]) {
         const code = String(otpMatch[1]).trim();
-        // Ignore common non-code words accidentally captured
-        if (!/^(submit|continue|confirm|verify|apply|code|security|please|thanks)$/i.test(code)) {
+        if (!/^(submit|continue|confirm|verify|apply|code|security|please|thanks|pause|resume|stop|next)$/i.test(code)) {
             const codeField = snapshot.find((f) =>
                 /security|verif|otp|one[-\s]?time|email\s*code|confirmation\s*code|pin\b/i.test(f.label)
             ) || snapshot.find((f) => f.empty && /code/i.test(f.label)) || null;
             const wantSubmit = /submit|continue|confirm|verify|apply/i.test(text)
-                || /^(?:\s*[A-Za-z0-9]{4,12}\s*)$/.test(text); // bare code → fill then submit
-            return {
-                ok: true,
+                || /^(?:\s*[A-Za-z0-9]{4,12}\s*)$/.test(text);
+            return okResult({
                 fills: [{
                     id: codeField?.id,
                     label: codeField?.label || 'Security code',
@@ -122,10 +285,8 @@ async function interpretFillInstruction({
                 issueKey: 'email_otp|manual_code',
                 fieldKey: 'email_otp',
                 summary: `Fill security code ${code}${wantSubmit ? ' + submit' : ''}`,
-                provider: 'local',
-                model: null,
                 emailOtp: code
-            };
+            });
         }
     }
 
@@ -134,63 +295,74 @@ async function interpretFillInstruction({
         || /submit\s+right\s+now/i.test(text)
         || /better\s+to\s+submit/i.test(text)
         || /go\s+ahead\s+and\s+submit/i.test(text)) {
-        // If the snapshot still has an empty security-code field, don't click Submit blindly.
         const needsCode = snapshot.some((f) =>
             f.empty && /security|verif|otp|one[-\s]?time|email\s*code|confirmation\s*code/i.test(f.label)
         );
         if (needsCode) {
-            return {
-                ok: false,
-                fills: [],
-                clickSubmit: false,
-                issueKey: 'email_otp|need_code',
-                fieldKey: 'email_otp',
-                summary: 'Form needs the email security code first — paste it here (e.g. wFY53Ht3) then I will submit',
-                skipped: true,
-                provider: 'local',
-                model: null
-            };
+            return emptyResult(
+                'Form needs the email security code first — paste it here (e.g. wFY53Ht3) then I will submit',
+                { issueKey: 'email_otp|need_code', fieldKey: 'email_otp', provider: 'local', model: null }
+            );
         }
-        return {
-            ok: true,
-            fills: [],
+        return okResult({
             clickSubmit: true,
             issueKey: 'submit|manual',
             fieldKey: 'submit',
-            summary: 'Submit only',
-            provider: 'local',
-            model: null
-        };
+            summary: 'Submit only'
+        });
     }
 
     const groq = getAnswersGroqRescueConfig();
     if (!groq?.apiKey) {
-        return {
-            ok: false,
-            fills: [],
-            clickSubmit: false,
-            summary: 'No Groq key — use a concrete instruction like “Type city, state and zip into Location”',
-            skipped: true
-        };
+        return emptyResult(
+            'No Groq key — try: Pause, Resume, Disability = No, Type city into Location, Submit now'
+        );
     }
 
-    const system = `You help Auto Bidder fix a stuck job application form after fill.
-The user gives a short instruction. Return JSON actions only — no chat.
-Rules:
-- Prefer filling empty/wrong fields from profile location (city, state, zip).
-- clickSubmit true only if instruction says submit OR form looks ready after fills.
-- fieldKey: short key like location, salary, sponsorship.
-- issueKey: host-agnostic like location|no_dropdown_match.
-Return JSON:
-{"fills":[{"id":"...","label":"...","answer":"..."}],"clickSubmit":true|false,"fieldKey":"...","issueKey":"...","summary":"..."}`;
+    const system = `You are Lumi, an elite Auto Bidder control assistant for live job-application forms.
+
+Your job: turn a short human instruction into precise JSON actions that fix the form or control the queue.
+
+You know this candidate's PROFILE facts and the open form fields. Prefer PROFILE + resume facts. Never invent employers, degrees, or years.
+
+VOICE FOR OPEN-TEXT ANSWERS:
+- Short, clear, professional, human-typed.
+- 1 sentence preferred (hard cap ~45 words). Unique to this profile + this JD.
+- Plain text only: no markdown, no bold, no bullets, no long dashes (— –).
+
+HARD DEFAULTS (unless instruction says otherwise):
+- Disability → No, I do not have a disability
+- Visa / sponsorship → No
+- Work authorization / legally authorized → Yes
+- Over 18 → Yes
+- US citizen / U.S. person → Yes
+- Former employee / worked here before / relative / non-compete → No
+- Gender → profile gender (usually Male)
+- Years / skill experience → never "0 experience" / "No experience"; pick production / mid-senior options matching years_of_experience
+
+QUEUE / CONTROL (set queueControl OR reAutofill when asked):
+- pause | resume | stop | next | skip (CAPTCHA)
+- reAutofill true = re-run autofill on this tab
+
+FILL RULES:
+- Prefer empty/wrong required fields.
+- When OPTIONS exist in the field value or label, copy an option EXACTLY.
+- Multiple fields OK (up to 8).
+- clickSubmit true only if user says submit OR form is clearly ready after your fills.
+- fieldKey: short key (location, salary, sponsorship, why_company, skill_experience…).
+- issueKey: host-agnostic like location|no_dropdown_match or why|rewrite.
+
+Return JSON ONLY (no chat):
+{"fills":[{"id":"...","label":"...","answer":"..."}],"clickSubmit":true|false,"queueControl":null|"pause"|"resume"|"stop"|"next"|"skip","reAutofill":false,"fieldKey":"...","issueKey":"...","summary":"one short human line"}`;
 
     const user = {
-        instruction: text.slice(0, 500),
+        instruction: text.slice(0, 600),
         host: host || '',
         ats: ats || '',
         company: companyName || '',
         role: jobRole || '',
-        profile_location: { city, state: st, zip, line: locationLineTrim },
+        job_description_excerpt: String(jobDescription || '').slice(0, 1200),
+        profile: facts,
         missing_required: (missingRequired || []).slice(0, 12),
         fields: snapshot,
         prior_lessons: (Array.isArray(lessons) ? lessons : []).slice(0, 8).map((l) => ({
@@ -215,11 +387,11 @@ Return JSON:
                 { role: 'system', content: system },
                 { role: 'user', content: JSON.stringify(user, null, 2) }
             ],
-            max_tokens: 900,
-            temperature: 0.1
+            max_tokens: 1200,
+            temperature: 0.15
         }, {
             headers: { Authorization: `Bearer ${groq.apiKey}` },
-            timeout: 40000
+            timeout: 45000
         });
 
         const raw = stripReasoning(String(response.data?.choices?.[0]?.message?.content || ''));
@@ -229,6 +401,8 @@ Return JSON:
                 ok: false,
                 fills: [],
                 clickSubmit: false,
+                queueControl: null,
+                reAutofill: false,
                 summary: 'Could not parse instruction',
                 provider: groq.provider,
                 model: groq.model
@@ -240,20 +414,33 @@ Return JSON:
         } catch (_) {
             parsed = {};
         }
+
         const fills = (Array.isArray(parsed.fills) ? parsed.fills : [])
             .map((a) => ({
                 id: a.id || undefined,
                 label: String(a.label || '').slice(0, 160),
-                answer: String(a.answer || '').slice(0, 800)
+                answer: String(a.answer || '')
+                    .replace(/\*\*([^*]+)\*\*/g, '$1')
+                    .replace(/\s*[—–―]+\s*/g, ', ')
+                    .slice(0, 800)
             }))
             .filter((a) => a.answer && (a.label || a.id))
             .slice(0, 12);
 
+        const qcRaw = String(parsed.queueControl || '').toLowerCase().trim();
+        const queueControl = ['pause', 'resume', 'stop', 'next', 'skip'].includes(qcRaw)
+            ? qcRaw
+            : null;
+        const reAutofill = parsed.reAutofill === true;
+        const clickSubmit = parsed.clickSubmit === true;
+
         return {
-            ok: fills.length > 0 || parsed.clickSubmit === true,
+            ok: fills.length > 0 || clickSubmit || !!queueControl || reAutofill,
             fills,
-            clickSubmit: parsed.clickSubmit === true,
-            fieldKey: String(parsed.fieldKey || 'form').slice(0, 80),
+            clickSubmit,
+            queueControl,
+            reAutofill,
+            fieldKey: String(parsed.fieldKey || (queueControl ? 'queue' : 'form')).slice(0, 80),
             issueKey: String(parsed.issueKey || 'user_instruct').slice(0, 120),
             summary: String(parsed.summary || 'Instruction applied').slice(0, 200),
             provider: groq.provider,
@@ -265,6 +452,8 @@ Return JSON:
             ok: false,
             fills: [],
             clickSubmit: false,
+            queueControl: null,
+            reAutofill: false,
             summary: err.message || 'Instruction interpret failed',
             skipped: true,
             provider: groq.provider,
@@ -275,5 +464,6 @@ Return JSON:
 
 module.exports = {
     interpretFillInstruction,
-    compactFields
+    compactFields,
+    profileFacts
 };

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "question_9169915101",
+    "label": "Are you currently authorized to work in the country where this position is located, without requiring sponsorship, now or in the future?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_9169917101",
+    "label": "Have you ever been employed by Nebius before?*",
+    "answer": "No",
+    "source": "fixed",
+    "match_source": "regex",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "previous_employer_no",
+    "knockout": true
+  },
+  {
+    "id": "question_9169913101",
+    "label": "Have you read Nebius's Candidates Privacy Policy?*",
+    "answer": "Yes",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "question_9169914101[]",
+    "label": "Which languages do you speak?*",
+    "answer": "English",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "question_9169916101",
+    "label": "Do you currently reside in the location specified for this role?*",
+    "answer": "No",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "gdpr_retention_consent_given_1",
+    "label": "By checking this box, I agree to allow Nebius to retain my data for future opportunities for employment for up to 720 days after the conclusion of consideration of my current application for employmen",
+    "answer": "Yes",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Palo Alto, CA, 94306",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

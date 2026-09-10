@@ -5,6 +5,7 @@ const ATS_LABELS = {
     workday: 'Workday',
     lever: 'Lever',
     ashby: 'Ashby',
+    gem: 'Gem',
     linkedin: 'LinkedIn',
     oracle: 'Oracle Cloud HCM',
     icims: 'iCIMS',
@@ -20,6 +21,7 @@ const SUPPORTED_ATS = new Set([
     'workday',
     'lever',
     'ashby',
+    'gem',
     'oracle',
     'icims',
     'smartrecruiters',
@@ -58,6 +60,9 @@ export function detectAtsFromUrl(url) {
     }
     if (/ashbyhq\.com/i.test(u)) {
         return { id: 'ashby', label: ATS_LABELS.ashby, supported: true };
+    }
+    if (/jobs\.gem\.com/i.test(u)) {
+        return { id: 'gem', label: ATS_LABELS.gem, supported: true };
     }
     if (/linkedin\.com/i.test(u)) {
         return { id: 'linkedin', label: ATS_LABELS.linkedin, supported: false };
@@ -180,6 +185,7 @@ export function isFailureEvent(eventType, meta) {
     // Recoverable skips — shown as ATTENTION, not hard FAILED.
     if (isTabClosedEvent(t, meta)) return false;
     if (/^item_aborted$/i.test(t) && !isBudgetExceededMeta(meta)) return false;
+    if (/^job_expired$/i.test(t)) return false;
     if (isBudgetExceededEvent(t, meta)) return true;
     if (/reautofill_failed/i.test(t)) return true;
     return /blocked_ats|open_failed|fill_failed|ai_failed|needs_captcha|captcha_abandoned|needs_manual|login_wall|no_form|cv_regenerate_failed/i.test(
@@ -339,32 +345,41 @@ export function liveStatusComment({
     const m = meta && typeof meta === 'object' ? meta : {};
     if (/bidder_answers_ready/i.test(t)) {
         const n = Number(m.count ?? m.questions ?? NaN);
+        const q = Number(m.questions ?? NaN);
+        const ms = Number(m.duration_ms);
+        const dur = Number.isFinite(ms) && ms >= 0 ? ` in ${formatDurationCompact(ms / 1000)}` : '';
+        const qBit = Number.isFinite(q) && q > 0 && q !== n ? ` of ${q}` : '';
         return Number.isFinite(n)
-            ? `Answers ready (${n}) — filling form…`
-            : 'Answers ready — filling form…';
+            ? `Answers ready (${n}${qBit})${dur} — filling form…`
+            : `Answers ready${dur} — filling form…`;
     }
     if (/profile_fill_started/i.test(t)) {
         const n = Number(m.questions ?? NaN);
         return Number.isFinite(n)
-            ? `Filling profile & resume… (AI answering ${n} in parallel)`
-            : 'Filling profile & resume… (AI answers in parallel)';
+            ? `Filling profile & resume… (AI answering ${n} — questions wait for AI)`
+            : 'Filling profile & resume… (questions wait for AI answers)';
     }
     if (/answers_generating/i.test(t)) {
         const n = Number(m.count ?? m.questions ?? NaN);
         return Number.isFinite(n)
-            ? `AI answering ${n} question(s)… (profile fill starts as soon as resume is ready)`
-            : 'AI drafting answers… (profile fill starts as soon as resume is ready)';
+            ? `AI answering ${n} question(s)… (profile/files only until ready)`
+            : 'AI drafting answers… (profile/files only until ready)';
     }
     if (/ai_skipped_budget/i.test(t)) {
-        const n = Number(m.fresh ?? m.count ?? NaN);
+        const n = Number(m.fresh ?? m.count ?? m.questions ?? NaN);
+        const ms = Number(m.duration_ms);
+        const dur = Number.isFinite(ms) && ms > 0 ? ` after ${formatDurationCompact(ms / 1000)}` : '';
         return Number.isFinite(n)
-            ? `AI skipped for ${n} new question(s) (time budget) — filling with profile only`
-            : 'AI answers skipped (time budget) — continuing profile fill';
+            ? `AI skipped for ${n} new question(s) (time budget${dur}) — filling with profile only`
+            : `AI answers skipped (time budget${dur}) — continuing profile fill`;
     }
     if (isBudgetExceededEvent(t, m)) {
         const lim = Number(m.limitMs);
         const sec = Number.isFinite(lim) ? Math.round(lim / 1000) : 90;
         return `Time budget hit (~${sec}s) — stopped this bid, queue continues`;
+    }
+    if (/job_expired/i.test(t)) {
+        return 'Job expired — posting is no longer open. Bid stopped and the link was marked Expired.';
     }
     if (isTabClosedEvent(t, m)) {
         return 'Apply tab closed — Open tab, then Re-autofill';
@@ -460,8 +475,24 @@ export function isSecondaryStatusEvent(eventType) {
     );
 }
 
+/** PATCH mark-applied 404 after a real site thank-you — not a skip. */
+export function isBenignAppliedAccessError(error) {
+    return /application not found or access denied/i.test(String(error || ''));
+}
+
+function isBenignAbortEvent(eventType, meta) {
+    const t = String(eventType || '');
+    if (!/^item_aborted$/i.test(t)) return false;
+    const m = meta && typeof meta === 'object' ? meta : {};
+    return isBenignAppliedAccessError(m.error || m.reason || '');
+}
+
 /** Prefer last non-screenshot event from a course or event list. */
 export function lastStatusEvent(courseOrEvents) {
+    if (courseOrEvents && !Array.isArray(courseOrEvents) && Array.isArray(courseOrEvents.events)) {
+        const fromEvents = lastStatusEvent(courseOrEvents.events);
+        if (fromEvents.event_type) return fromEvents;
+    }
     if (Array.isArray(courseOrEvents)) {
         // From the end: an explicit SUCCESS revoke beats an older marked_applied.
         // Otherwise terminal SUCCESS still wins over later reautofill_done.
@@ -483,10 +514,15 @@ export function lastStatusEvent(courseOrEvents) {
         }
         let fallback = { event_type: '', meta: null };
         let lastPrimary = null;
+        let sawBenignAbort = false;
         for (let i = courseOrEvents.length - 1; i >= 0; i -= 1) {
             const e = courseOrEvents[i];
             const t = e?.event_type || e?.type || '';
             if (!t || isNoiseEvent(t)) continue;
+            if (isBenignAbortEvent(t, e.meta || e.last_event_meta)) {
+                sawBenignAbort = true;
+                continue;
+            }
             if (isSuccessEvent(t) && latestRevokeIdx >= 0 && i < latestRevokeIdx) continue;
             if (!fallback.event_type) {
                 fallback = { event_type: t, meta: e.meta || e.last_event_meta || null };
@@ -516,7 +552,20 @@ export function lastStatusEvent(courseOrEvents) {
                 }
             }
         }
-        return lastPrimary || fallback;
+        const picked = lastPrimary || fallback;
+        if (
+            sawBenignAbort
+            && picked?.event_type
+            && (isSuccessEvent(picked.event_type)
+                || isFilledEvent(picked.event_type)
+                || /submit_clicked/i.test(picked.event_type))
+        ) {
+            return {
+                event_type: 'marked_applied',
+                meta: { via: 'benign_access_error', prior: picked.event_type }
+            };
+        }
+        return picked;
     }
     const course = courseOrEvents || {};
     // Applied outcome / applied_at always beat a stale last_event (e.g. reautofill_done).
@@ -527,6 +576,13 @@ export function lastStatusEvent(courseOrEvents) {
         return { event_type: 'marked_applied', meta: course.last_event_meta || null };
     }
     const t = String(course.last_event_type || '');
+    // PATCH 404 after a real fill/thank-you — do not surface as SKIPPED.
+    if (isBenignAbortEvent(t, course.last_event_meta) && course.filled_at) {
+        return {
+            event_type: 'marked_applied',
+            meta: { via: 'benign_access_error', ...(course.last_event_meta || {}) }
+        };
+    }
     // List rows often store package_saved as last_event — prefer outcome/filled signals.
     if (isSecondaryStatusEvent(t) || isNoiseEvent(t)) {
         if (course.filled_at) {
@@ -561,11 +617,24 @@ export function courseRunStatus(course) {
     ) {
         return { kind: 'success', label: 'SUCCESS — Site confirmed the application', short: 'SUCCESS' };
     }
+    const shots = [].concat(course?.screenshots || [], course?.disk_screenshots || []);
+    const hasThankYouProof = shots.some((s) => isProofScreenshotStage(s?.stage));
+    if (hasThankYouProof && (course?.filled_at || isFilledEvent(event) || isCaptchaAttention(event, meta)
+        || /submit_clicked/i.test(event))) {
+        return { kind: 'success', label: 'SUCCESS — Site confirmed the application', short: 'SUCCESS' };
+    }
     if (isCaptchaAttention(event, meta)) {
         return {
             kind: 'attention',
             label: failureLabel(event, meta) || 'Needs CAPTCHA / login',
             short: /login/i.test(event) ? 'LOGIN' : 'CAPTCHA'
+        };
+    }
+    if (/job_expired/i.test(event)) {
+        return {
+            kind: 'attention',
+            label: 'EXPIRED — Job is no longer open',
+            short: 'EXPIRED'
         };
     }
     if (isTabClosedEvent(event, meta)) {
@@ -574,6 +643,19 @@ export function courseRunStatus(course) {
             label: 'TAB CLOSED — Open tab, then Re-autofill',
             short: 'TAB CLOSED'
         };
+    }
+    if (/^item_aborted$/i.test(event) && isBenignAppliedAccessError(meta?.error || '')) {
+        const events = Array.isArray(course?.events) ? course.events : [];
+        const hadFill = !!course?.filled_at
+            || events.some((e) => {
+                const et = e?.event_type || e?.type || '';
+                return isFilledEvent(et) || isSuccessEvent(et) || /submit_clicked/i.test(et);
+            });
+        const shots = [].concat(course?.screenshots || [], course?.disk_screenshots || []);
+        const proof = shots.some((s) => isProofScreenshotStage(s?.stage));
+        if (hadFill || proof) {
+            return { kind: 'success', label: 'SUCCESS — Site confirmed the application', short: 'SUCCESS' };
+        }
     }
     if (/^item_aborted$/i.test(event) && !isBudgetExceededMeta(meta)) {
         const err = String(meta?.error || '').trim();
@@ -850,6 +932,7 @@ export function bidStageProgress({
         for (let i = list.length - 1; i >= 0; i -= 1) {
             const et = list[i]?.event_type;
             if (isNoiseEvent(et) || isSecondaryStatusEvent(et)) continue;
+            if (isBenignAbortEvent(et, list[i]?.meta)) continue;
             last = list[i];
             break;
         }
@@ -877,6 +960,12 @@ export function bidStageProgress({
     const meta = (last?.meta && typeof last.meta === 'object' ? last.meta : null)
         || (lastEventMeta && typeof lastEventMeta === 'object' ? lastEventMeta : {})
         || {};
+    if (
+        list.some((e) => isBenignAbortEvent(e?.event_type, e?.meta))
+        && (isFilledEvent(t) || isSuccessEvent(t) || /submit_clicked/i.test(t) || /^item_aborted$/i.test(t))
+    ) {
+        t = 'marked_applied';
+    }
 
     const qStatus = String(qs?.status || '');
     const queueTotal = Number(qs?.total) > 0 ? Number(qs.total) : null;
@@ -916,6 +1005,8 @@ export function bidStageProgress({
                 : (err ? `RE-FILL FAIL — ${err}` : 'RE-FILL FAIL — Open tab and retry'),
             'rose'
         );
+    } else if (/job_expired/i.test(t)) {
+        bump(Math.max(stepIndex, 1), 100, 'EXPIRED — Job is no longer open', 'rose');
     } else if (/^item_aborted$/i.test(t)) {
         const err = String(meta.error || '').trim();
         bump(Math.max(stepIndex, 1), Math.max(pct, 35), err ? `SKIPPED — ${err}` : 'SKIPPED — Bid aborted', 'amber');
@@ -1148,6 +1239,9 @@ export function describeBidCourseFailure(eventType, meta, ctx = {}) {
             ? `Re-autofill failed: ${err}`
             : 'Re-autofill failed. Open the apply tab and try again.';
     }
+    if (/job_expired/i.test(t)) {
+        return 'This posting is no longer open. The bid was stopped and the Job Links row was marked Expired.';
+    }
     if (/^item_aborted$/i.test(t)) {
         const err = String(m.error || '').trim();
         return err
@@ -1219,6 +1313,7 @@ export function failureSummary(eventType, meta, ctx = {}) {
 export function failureLabel(eventType, meta) {
     const t = String(eventType || '');
     const m = meta && typeof meta === 'object' ? meta : {};
+    if (/job_expired/i.test(t)) return 'Expired';
     if (isTabClosedEvent(t, m)) return 'Tab closed';
     if (isBudgetExceededEvent(t, m)) return 'Time limit';
     if (/reautofill_failed/i.test(t)) return 'Re-autofill failed';
@@ -1253,6 +1348,15 @@ export function describeEventMeta(eventType, meta, ctx = {}) {
     const m = meta && typeof meta === 'object' ? meta : {};
     if (typeof meta === 'string' && meta.trim()) return meta.trim();
     const bits = [m.error, m.reason, m.ats && atsLabel(m.ats), m.stage].filter(Boolean);
+    const q = Number(m.questions ?? NaN);
+    const n = Number(m.count ?? NaN);
+    const ms = Number(m.duration_ms);
+    if (Number.isFinite(q) && q > 0) bits.push(`Q ${q}`);
+    if (Number.isFinite(n) && n > 0 && n !== q) bits.push(`${n} answers`);
+    else if (Number.isFinite(n) && n > 0 && !Number.isFinite(q)) bits.push(`${n} answers`);
+    if (Number.isFinite(ms) && ms >= 0 && /answer|ai_/i.test(String(eventType || ''))) {
+        bits.push(formatDurationCompact(ms / 1000));
+    }
     return bits.join(' · ');
 }
 

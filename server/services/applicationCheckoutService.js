@@ -140,6 +140,16 @@ Return JSON only:
             timeout: 45000
         });
 
+        try {
+            const { recordAiResponse } = require('./aiUsageService');
+            recordAiResponse(response, {
+                provider: 'groq',
+                model: groq.model,
+                kind: 'checkout',
+                keySlot: groq.groq_key_slot
+            });
+        } catch (_) { /* ignore */ }
+
         const raw = stripReasoning(String(response.data?.choices?.[0]?.message?.content || ''));
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {

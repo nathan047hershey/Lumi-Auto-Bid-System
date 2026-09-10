@@ -1,0 +1,53 @@
+[
+  {
+    "id": "question_14812874004",
+    "label": "Are you legally authorized to work in the US?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_14812875004",
+    "label": "Will you now or at any time in the future require visa sponsorship?*",
+    "answer": "No",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "requires_sponsorship",
+    "knockout": true
+  },
+  {
+    "id": "question_14812880004",
+    "label": "How did you hear about Hex?*",
+    "answer": "a prior company",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "how_heard",
+    "knockout": false
+  },
+  {
+    "id": "question_14812881004",
+    "label": "Anything else you want to add?",
+    "answer": "At Whatnot I led the design of a low‑latency data processing service that handled real‑time user events, which gave me deep experience in building performant backend platforms. I'm eager to apply that to Hex’s compute engine, especially the work on intelligent caching and DuckDB integration.",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Palo Alto, CA, 94306",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

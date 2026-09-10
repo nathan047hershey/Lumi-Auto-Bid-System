@@ -17,6 +17,7 @@ import {
     Minimize2,
     Pencil,
     Play,
+    Pause,
     Plus,
     RefreshCw,
     SkipForward,
@@ -29,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import BidProgressBar from '@/components/job-links/BidProgressBar';
 import { runStatusBadgeClass, runStatusBannerClass, runStatusHeadline, formatTotalElapsed } from '@/lib/bidCourseFailure';
 import { shortenNotifyText, shortenOutcomeLabel } from '@/lib/bidderNotifyCopy';
+import TeachAndCheckPanel from '@/components/TeachAndCheckPanel';
 
 const POS_KEY = 'lumi_bid_monitor_pos_v2';
 /** Wide enough to read Greenhouse form fields in the live frame. */
@@ -96,6 +98,7 @@ export default function BidMonitorDock({
     awaitingCaptcha = false,
     captchaTabMissing = false,
     queueRunning = false,
+    queuePaused = false,
     /** Notification feed (newest first) — from Setup mergeNotifFeeds */
     notifFeed = [],
     onClearNotifs = null,
@@ -116,6 +119,8 @@ export default function BidMonitorDock({
     onInstructLumi = null,
     coachStatus = '',
     onNextJob,
+    onPauseQueue = null,
+    onResumeQueue = null,
     onStopQueue,
     /** Start / restart queue from the panel (dialog may be closed). */
     onProcess = null,
@@ -133,10 +138,15 @@ export default function BidMonitorDock({
     outcomeKind = '',
     outcomeShort = '',
     outcomeLabel = '',
-    /** ISO / ms — current job course start (live clock). */
+    /** ISO / ms — Auto Bidder start (Process / queue_started), not CV generation. */
     jobStartedAt = null,
     /** ISO / ms — when job finished (stops the job clock). */
     jobEndedAt = null,
+    /** ISO / ms — answers_generating → bidder_answers_ready. */
+    answersStartedAt = null,
+    answersEndedAt = null,
+    answersQuestionCount = 0,
+    answersReadyCount = 0,
     /** ms — queue start from Lumi (live clock across jobs). */
     queueStartedAt = null,
     /** ms — when queue finished. */
@@ -238,11 +248,12 @@ export default function BidMonitorDock({
         if (!open) return undefined;
         const needTick = lastRefreshedAt != null
             || (jobStartedAt && !jobEndedAt)
-            || (queueStartedAt && !queueEndedAt);
+            || (queueStartedAt && !queueEndedAt)
+            || (answersStartedAt && !answersEndedAt);
         if (!needTick) return undefined;
         const t = setInterval(() => setTick((n) => n + 1), 1000);
         return () => clearInterval(t);
-    }, [open, lastRefreshedAt, jobStartedAt, jobEndedAt, queueStartedAt, queueEndedAt]);
+    }, [open, lastRefreshedAt, jobStartedAt, jobEndedAt, queueStartedAt, queueEndedAt, answersStartedAt, answersEndedAt]);
 
     const liveUpdatedLabel = (() => {
         if (updatedLabel) return updatedLabel;
@@ -254,13 +265,24 @@ export default function BidMonitorDock({
     const jobTotalLabel = jobStartedAt
         ? formatTotalElapsed(jobStartedAt, jobEndedAt)
         : '';
+    const answersTotalLabel = answersStartedAt
+        ? formatTotalElapsed(answersStartedAt, answersEndedAt)
+        : '';
+    const answersQLabel = Number(answersQuestionCount) > 0
+        ? `Q ${answersQuestionCount}${Number(answersReadyCount) > 0 ? `/${answersReadyCount}` : ''}`
+        : '';
+    const bidAnswersLabel = [
+        jobTotalLabel ? `Bid ${jobTotalLabel}` : '',
+        answersTotalLabel ? `Answers ${answersTotalLabel}` : '',
+        answersQLabel
+    ].filter(Boolean).join(' · ');
     const queueTotalLabel = queueStartedAt
         ? formatTotalElapsed(queueStartedAt, queueEndedAt)
         : '';
     const queuePosLabel = Number(queueTotal) > 0 && Number(queueIndex) > 0
         ? `Job ${queueIndex}/${queueTotal}`
         : '';
-    const showTiming = !!(jobTotalLabel || queueTotalLabel || queuePosLabel);
+    const showTiming = !!(bidAnswersLabel || queueTotalLabel || queuePosLabel);
     useEffect(() => {
         if (!open || minimized) return undefined;
         // Keep the expanded panel fully on-screen (answers + live frame were clipping).
@@ -333,9 +355,11 @@ export default function BidMonitorDock({
         || typeof onUpdateState === 'function'
         || typeof onSubmitApply === 'function'
         || typeof onNextJob === 'function'
+        || typeof onPauseQueue === 'function'
+        || typeof onResumeQueue === 'function'
         || typeof onStopQueue === 'function'
         || typeof onProcess === 'function';
-    const canSteer = queueRunning || awaitingCaptcha || progressPct > 0;
+    const canSteer = queueRunning || awaitingCaptcha || progressPct > 0 || queuePaused;
     const hasCv = !!(cvDownloadUrl || cvEditHref || cvFilename);
     const outcomeBadge = outcomeKind
         ? {
@@ -538,8 +562,36 @@ export default function BidMonitorDock({
                         Next
                     </Button>
                 ) : null}
+                {queuePaused && onResumeQueue ? (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="gradient"
+                        className={btn}
+                        disabled={controlsBusy}
+                        onClick={onResumeQueue}
+                        title="Resume auto-bidder queue"
+                    >
+                        <Play className="h-3 w-3" />
+                        Resume queue
+                    </Button>
+                ) : null}
+                {!queuePaused && onPauseQueue ? (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={btn}
+                        disabled={controlsBusy || (!queueRunning && !canSteer)}
+                        onClick={onPauseQueue}
+                        title="Pause queue so you can fix the form"
+                    >
+                        <Pause className="h-3 w-3" />
+                        Pause
+                    </Button>
+                ) : null}
                 {onStopQueue ? (
-                    <Button type="button" size="sm" variant="destructive" className={btn} disabled={controlsBusy || (!canSteer && !queueRunning)} onClick={onStopQueue}>
+                    <Button type="button" size="sm" variant="destructive" className={btn} disabled={controlsBusy || (!canSteer && !queueRunning && !queuePaused)} onClick={onStopQueue}>
                         <Square className="h-3 w-3" />
                         Stop
                     </Button>
@@ -682,8 +734,10 @@ export default function BidMonitorDock({
                                 {followLive ? 'Live' : 'Paused'}
                             </span>
                         )}
-                        {jobTotalLabel ? (
-                            <span className="font-mono text-[10px] tabular-nums text-white/45">{jobTotalLabel}</span>
+                        {bidAnswersLabel ? (
+                            <span className="font-mono text-[10px] tabular-nums text-white/45" title="Bid time from Process · answers/questions">
+                                {bidAnswersLabel}
+                            </span>
                         ) : null}
                         {awaitingCaptcha ? (
                             <span className="inline-flex h-5 items-center rounded-md bg-amber-500/15 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200 ring-1 ring-amber-400/30">
@@ -768,7 +822,7 @@ export default function BidMonitorDock({
                                     </div>
                                     {showTiming ? (
                                         <span className="shrink-0 font-mono text-[10px] tabular-nums text-cyan-300/80">
-                                            {jobTotalLabel || queueTotalLabel}
+                                            {bidAnswersLabel || queueTotalLabel}
                                         </span>
                                     ) : null}
                                 </div>
@@ -820,7 +874,7 @@ export default function BidMonitorDock({
                                     className="text-[11px] font-semibold tracking-tight text-cyan-100/90"
                                     style={{ fontFamily: 'var(--font-display)' }}
                                 >
-                                    Teach Lumi (Instruct)
+                                    Lumi Assistant
                                 </p>
                                 {coachStatus ? (
                                     <span className="truncate text-[10px] text-cyan-200/70">
@@ -828,18 +882,18 @@ export default function BidMonitorDock({
                                     </span>
                                 ) : (
                                     <span className="truncate text-[10px] text-white/40">
-                                        Fix a field → Apply → remembered next time
+                                        Control bidder · fix answers · remember
                                     </span>
                                 )}
                             </div>
                             <p className="mt-1 text-[10px] leading-snug text-white/45">
-                                Type what to fix on the apply tab (not the blue Autofill bubble). Examples below.
+                                Tell Lumi what to do on the apply tab: fill answers, pause, skip, submit, or re-fill.
                             </p>
                             <div className="mt-2 flex gap-2">
                                 <input
                                     type="text"
                                     className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/25 px-2.5 text-[12px] text-white placeholder:text-white/35 outline-none transition focus:border-cyan-400/40 focus:ring-2 focus:ring-cyan-400/20"
-                                    placeholder="Type city, state and zip into Location"
+                                    placeholder="e.g. Disability = No · Pause · Answer why this role briefly"
                                     value={instructText}
                                     disabled={instructBusy || controlsBusy}
                                     onChange={(e) => setInstructText(e.target.value)}
@@ -878,10 +932,16 @@ export default function BidMonitorDock({
                             </div>
                             <div className="mt-1.5 flex flex-wrap gap-1">
                                 {[
-                                    'Type city, state and zip into Location',
+                                    'Pause',
+                                    'Resume',
                                     'Disability = No',
+                                    'Visa sponsorship = No',
+                                    'Type city, state and zip into Location',
+                                    'Answer the why / experience questions briefly',
+                                    'Re-autofill',
                                     'Submit now',
-                                    'Set phone country to +1'
+                                    'Next job',
+                                    'Skip captcha'
                                 ].map((ex) => (
                                     <button
                                         key={ex}
@@ -902,6 +962,9 @@ export default function BidMonitorDock({
                                     {instructMsg}
                                 </p>
                             ) : null}
+                            <div className="mt-2 border-t border-white/10 pt-2">
+                                <TeachAndCheckPanel compact />
+                            </div>
                             {lessonRows.length ? (
                                 <div className="mt-2 space-y-1 border-t border-white/10 pt-2">
                                     <p className="text-[10px] font-medium text-white/45">Lessons for this host</p>
@@ -1252,9 +1315,9 @@ export default function BidMonitorDock({
                         <span className="truncate text-[11px] text-white/55">
                             {progressLabel || statusLine || title || 'Bidding in background…'}
                         </span>
-                        {jobTotalLabel ? (
-                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-cyan-300/80" title="Job time">
-                                {jobTotalLabel}
+                        {bidAnswersLabel ? (
+                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-cyan-300/80" title="Bid time from Process · answers/questions">
+                                {bidAnswersLabel}
                             </span>
                         ) : null}
                         {progressPct > 0 ? (

@@ -1,0 +1,53 @@
+[
+  {
+    "id": "cards[35b3530d-130b-4efc-a797-c914cea712ee][field0]",
+    "label": "How long have you worked with Python backend engineering?",
+    "answer": "No",
+    "source": "fixed",
+    "match_source": "regex",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "previous_employer_no",
+    "knockout": true
+  },
+  {
+    "id": "org",
+    "label": "Current company",
+    "answer": "FrontDoor",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "urls[Twitter]",
+    "label": "Twitter URL",
+    "answer": "N/A",
+    "answer_type": "written",
+    "source": "api",
+    "match_source": "llm",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "cards[35b3530d-130b-4efc-a797-c914cea712ee][field1]",
+    "label": "Briefly describe your cloud-native backend experience.",
+    "answer": "I have built Python/FastAPI services on a prior company, using Lambda, S3, RDS, and IAM to deliver multi‑tenant APIs with async background jobs and message queues. The services run in production handling high‑volume data pipelines and secure customer data.",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "cards[35b3530d-130b-4efc-a797-c914cea712ee][field2]",
+    "label": "How have you productionized complex backend systems?",
+    "answer": "I introduced structured logging, tracing with OpenTelemetry, automated CI/CD pipelines, and retry logic with exponential backoff for external LLM calls. This reduced incident time and ensured reliable, observable execution of long‑running workflows in production.",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  }
+]

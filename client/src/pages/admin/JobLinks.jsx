@@ -78,7 +78,12 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/DatePicker';
 import { cn } from '@/lib/utils';
-import { cvGenerationTimeLabel } from '@/lib/cvGenerationTime';
+import { cvGenerationTimeLabel, useNowTick } from '@/lib/cvGenerationTime';
+import {
+    jobLinksListStateToQuery,
+    resolveJobLinksListState,
+    writeSavedJobLinksListState
+} from '@/lib/jobLinksListState';
 import { LOCATION_FLAGS } from '@/lib/locationFlags';
 import FilterChip from '@/components/FilterChip';
 import AppPage from '@/components/AppPage';
@@ -93,6 +98,27 @@ import AutoBidderDialog from '@/components/job-links/AutoBidderDialog';
 
 // Canonical techstack values. Order is the same as in the dropdown
 // menu so the table filter and the create-modal dropdown align.
+const PLATFORMS = [
+    { value: 'greenhouse', label: 'Greenhouse' },
+    { value: 'lever', label: 'Lever' },
+    { value: 'ashby', label: 'Ashby' },
+    { value: 'gem', label: 'Gem' },
+    { value: 'workday', label: 'Workday' },
+    { value: 'icims', label: 'iCIMS' },
+    { value: 'smartrecruiters', label: 'SmartRecruiters' },
+    { value: 'bamboohr', label: 'BambooHR' },
+    { value: 'oracle', label: 'Oracle Cloud HCM' },
+    { value: 'linkedin', label: 'LinkedIn' },
+    { value: 'rippling', label: 'Rippling' },
+    { value: 'jobvite', label: 'Jobvite' },
+    { value: 'paycom', label: 'Paycom' },
+    { value: 'applytojob', label: 'ApplyToJob' },
+    { value: 'paylocity', label: 'Paylocity' },
+    { value: 'successfactors', label: 'SuccessFactors' },
+    { value: 'generic', label: 'Other / generic' }
+];
+const PLATFORM_LABEL = Object.fromEntries(PLATFORMS.map((p) => [p.value, p.label]));
+
 const TECHSTACKS = [
     { value: 'python',   label: 'Python' },
     { value: 'java',     label: 'Java' },
@@ -135,6 +161,13 @@ const AVAILABILITY_META = {
     0: { label: 'Unavailable', variant: 'muted' }
 };
 
+function jobLinkAvailabilityMeta(row) {
+    if (String(row?.closed_reason || '').toLowerCase() === 'expired') {
+        return { label: 'Expired', variant: 'destructive' };
+    }
+    return AVAILABILITY_META[row?.is_available] || AVAILABILITY_META[1];
+}
+
 const FETCH_STATUS_META = {
     pending:  { label: 'Pending',  variant: 'muted' },
     fetching: { label: 'Fetching', variant: 'info' },
@@ -165,6 +198,8 @@ function formatJobLinkTimestamp(value) {
  */
 function AvailableProfilesCell({ profiles }) {
     const list = Array.isArray(profiles) ? profiles : [];
+    const live = list.some((p) => String(p.generation_status || '') === 'generating');
+    const now = useNowTick(live);
     if (list.length === 0) {
         return <span className="text-xs text-muted-foreground">—</span>;
     }
@@ -209,7 +244,7 @@ function AvailableProfilesCell({ profiles }) {
         }
         if (p.generation_status === 'generating' || p.generation_status === 'pending') {
             return {
-                label: p.generation_status === 'generating' ? 'CV GEN…' : 'CV PENDING',
+                label: p.generation_status === 'generating' ? 'CV GEN…' : 'CV QUEUED',
                 className: 'border-blue-500/45 bg-blue-500/15 text-blue-200'
             };
         }
@@ -226,7 +261,7 @@ function AvailableProfilesCell({ profiles }) {
             title={list.map((p) => {
                 const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || `#${p.profile_id}`;
                 const meta = chipMeta(p);
-                const gen = cvGenerationTimeLabel(p);
+                const gen = cvGenerationTimeLabel(p, { now });
                 const parts = [name, meta.label];
                 if (gen) parts.push(gen);
                 if (meta.label === 'FILLED') parts.push('form filled — not site SUCCESS');
@@ -238,7 +273,7 @@ function AvailableProfilesCell({ profiles }) {
             {list.map((p) => {
                 const name = `${p.first_name || ''} ${p.last_name || ''}`.trim() || `#${p.profile_id}`;
                 const meta = chipMeta(p);
-                const gen = cvGenerationTimeLabel(p);
+                const gen = cvGenerationTimeLabel(p, { now });
                 return (
                     <span
                         key={p.profile_id}
@@ -643,7 +678,7 @@ function AddJobLinkModal({ open, onOpenChange, onCreated }) {
 
                         <div className="space-y-1.5">
                             <Label htmlFor="jl-techstack">Techstack *</Label>
-                            <Select value={techstack} onValueChange={setTechstack}>
+                            <Select value={techstack || undefined} onValueChange={setTechstack}>
                                 <SelectTrigger id="jl-techstack">
                                     <SelectValue placeholder="Pick a techstack" />
                                 </SelectTrigger>
@@ -922,7 +957,7 @@ function EditJobLinkModal({ row, open, onOpenChange, onSaved }) {
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="space-y-1.5">
                                 <Label htmlFor="jl-edit-techstack">Techstack *</Label>
-                                <Select value={techstack} onValueChange={setTechstack}>
+                                <Select value={techstack || undefined} onValueChange={setTechstack}>
                                     <SelectTrigger id="jl-edit-techstack">
                                         <SelectValue placeholder="Pick a techstack" />
                                     </SelectTrigger>
@@ -1120,7 +1155,7 @@ function JobLinkDetailModal({ row, open, onOpenChange, onAvailabilityToggled }) 
 
     const fetchMeta = FETCH_STATUS_META[row.fetch_status] || FETCH_STATUS_META.pending;
     const jdMeta = jdStatusMeta(row);
-    const av = AVAILABILITY_META[row.is_available] || AVAILABILITY_META[1];
+    const av = jobLinkAvailabilityMeta(row);
 
     const techLabel = TECHSTACK_LABEL[row.techstack] || row.techstack || '—';
     const title = row.position_title || '—';
@@ -1345,22 +1380,18 @@ function JobLinks({ embedded = false }) {
     })();
 
     // Filters are seeded from URL search params so bookmarked / shared
-    // links restore the same view after navigation.
+    // links restore the same view after navigation. If the URL is empty
+    // (Back from a job, or the sidebar Job Links tab), restore the last
+    // list view from sessionStorage so page + filters are not wiped.
     const [searchParams, setSearchParams] = useSearchParams();
-    const initialFiltersRef = useRef({
-        search: searchParams.get('search') || '',
-        techstack: searchParams.get('techstack') || 'all',
-        available: searchParams.get('available') || 'all',
-        hasGeneratedResume: searchParams.get('has_generated_resume') === '1',
-        dateFrom: searchParams.get('date_from') || '',
-        dateTo: searchParams.get('date_to') || '',
-        today: searchParams.get('today') === '1'
-    });
+    const initialFiltersRef = useRef(resolveJobLinksListState(searchParams));
 
     // Filter state (text inputs are local; only debounced values drive the request).
     const [search, setSearch, debouncedSearch] = useDebouncedValue(initialFiltersRef.current.search);
     const [techstackFilter, setTechstackFilter] = useState(initialFiltersRef.current.techstack);
+    const [platformFilter, setPlatformFilter] = useState(initialFiltersRef.current.platform);
     const [availableFilter, setAvailableFilter] = useState(initialFiltersRef.current.available);
+    const [bidStateFilter, setBidStateFilter] = useState(initialFiltersRef.current.bidState || 'all');
     // Restrict the list to job_links that have at least one
     // job_applications row with a ready resume. Useful for the
     // post-batch pass — show only what actually produced a
@@ -1380,15 +1411,10 @@ function JobLinks({ embedded = false }) {
     // Pagination. We mirror the page number to the URL search
     // params (?page=N) so the user lands back on the same page
     // after navigating into a job-link detail page and back —
-    // either via the in-app <Link>, the browser back button, or a
-    // shared/bookmarked URL. The URL is the source of truth on
-    // mount; subsequent setPage calls update both React state and
-    // the URL in lockstep.
-    const initialPageRaw = parseInt(searchParams.get('page') || '1', 10);
-    const initialPage = Number.isFinite(initialPageRaw) && initialPageRaw >= 1
-        ? initialPageRaw
-        : 1;
-    const [page, setPageState] = useState(initialPage);
+    // either via the in-app Back button, the browser back button, or a
+    // shared/bookmarked URL. URL wins when it has list state;
+    // otherwise we hydrate from sessionStorage (see resolve above).
+    const [page, setPageState] = useState(initialFiltersRef.current.page);
     // setPage wraps the raw state setter so every navigation /
     // pagination click also updates the URL. We pass a `replace`
     // flag (default true) so the page number doesn't pollute the
@@ -1402,40 +1428,46 @@ function JobLinks({ embedded = false }) {
         });
     }, []);
 
-    // Keep URL search params in sync with React filter + page state.
+    // Keep URL search params and sessionStorage in sync with React
+    // filter + page state so Back from a job remounts the same view.
     useEffect(() => {
-        setSearchParams((cur) => {
-            const next = new URLSearchParams(cur);
-            if (page <= 1) {
-                next.delete('page');
-            } else {
-                next.set('page', String(page));
-            }
-            if (debouncedSearch) next.set('search', debouncedSearch);
-            else next.delete('search');
-            if (techstackFilter !== 'all') next.set('techstack', techstackFilter);
-            else next.delete('techstack');
-            if (availableFilter !== 'all') next.set('available', availableFilter);
-            else next.delete('available');
-            if (hasGeneratedResumeFilter) next.set('has_generated_resume', '1');
-            else next.delete('has_generated_resume');
-            if (debouncedDateFrom) next.set('date_from', debouncedDateFrom);
-            else next.delete('date_from');
-            if (debouncedDateTo) next.set('date_to', debouncedDateTo);
-            else next.delete('date_to');
-            if (isTodayActive) next.set('today', '1');
-            else next.delete('today');
-            return next;
-        }, { replace: true });
+        const snapshot = {
+            page,
+            search: search || debouncedSearch,
+            techstack: techstackFilter,
+            platform: platformFilter,
+            available: availableFilter,
+            bidState: bidStateFilter,
+            hasGeneratedResume: hasGeneratedResumeFilter,
+            dateFrom: dateFrom || debouncedDateFrom,
+            dateTo: dateTo || debouncedDateTo,
+            today: isTodayActive
+        };
+        writeSavedJobLinksListState(snapshot);
+        const nextQuery = jobLinksListStateToQuery({
+            ...snapshot,
+            search: debouncedSearch,
+            dateFrom: debouncedDateFrom,
+            dateTo: debouncedDateTo
+        });
+        const next = new URLSearchParams(nextQuery.startsWith('?') ? nextQuery.slice(1) : nextQuery);
+        if (searchParams.toString() === next.toString()) return;
+        setSearchParams(next, { replace: true });
     }, [
         page,
+        search,
+        dateFrom,
+        dateTo,
         debouncedSearch,
         techstackFilter,
+        platformFilter,
         availableFilter,
+        bidStateFilter,
         hasGeneratedResumeFilter,
         debouncedDateFrom,
         debouncedDateTo,
         isTodayActive,
+        searchParams,
         setSearchParams
     ]);
     const [limit] = useState(DEFAULT_LIMIT);
@@ -1457,6 +1489,8 @@ function JobLinks({ embedded = false }) {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [tableLoading, setTableLoading] = useState(false);
+    const [syncingCvs, setSyncingCvs] = useState(false);
+    const [refreshingRowIds, setRefreshingRowIds] = useState(() => new Set());
     const [error, setError] = useState(null);
     const [showAdd, setShowAdd] = useState(false);
     const [viewRow, setViewRow] = useState(null);
@@ -1496,12 +1530,20 @@ function JobLinks({ embedded = false }) {
         setTechstackFilter(value);
         setPage(1);
     }, [setPage]);
+    const changePlatformFilter = useCallback((value) => {
+        setPlatformFilter(value);
+        setPage(1);
+    }, [setPage]);
     const changeAvailableFilter = useCallback((value) => {
         setAvailableFilter(value);
         setPage(1);
     }, [setPage]);
     const changeHasGeneratedResumeFilter = useCallback((value) => {
         setHasGeneratedResumeFilter(Boolean(value));
+        setPage(1);
+    }, [setPage]);
+    const changeBidStateFilter = useCallback((value) => {
+        setBidStateFilter(value || 'all');
         setPage(1);
     }, [setPage]);
 
@@ -1515,11 +1557,25 @@ function JobLinks({ embedded = false }) {
                 onClear: () => changeTechstackFilter('all')
             });
         }
+        if (platformFilter !== 'all') {
+            out.push({
+                key: 'platform',
+                label: `Platform: ${PLATFORM_LABEL[platformFilter] || platformFilter}`,
+                onClear: () => changePlatformFilter('all')
+            });
+        }
         if (availableFilter !== 'all') {
             out.push({
                 key: 'available',
                 label: availableFilter === '1' ? 'Available only' : 'Unavailable only',
                 onClear: () => changeAvailableFilter('all')
+            });
+        }
+        if (bidStateFilter !== 'all') {
+            out.push({
+                key: 'bid_state',
+                label: `Bid: ${bidStateFilter.toUpperCase()}`,
+                onClear: () => changeBidStateFilter('all')
             });
         }
         if (hasGeneratedResumeFilter) {
@@ -1563,12 +1619,14 @@ function JobLinks({ embedded = false }) {
             });
         }
         return out;
-    }, [techstackFilter, availableFilter, hasGeneratedResumeFilter, debouncedDateFrom, debouncedDateTo, debouncedSearch, isTodayActive, changeTechstackFilter, changeAvailableFilter, changeHasGeneratedResumeFilter]);
+    }, [techstackFilter, platformFilter, availableFilter, bidStateFilter, hasGeneratedResumeFilter, debouncedDateFrom, debouncedDateTo, debouncedSearch, isTodayActive, changeTechstackFilter, changePlatformFilter, changeAvailableFilter, changeBidStateFilter, changeHasGeneratedResumeFilter]);
 
     const resetFilters = () => {
         setSearch('');
         setTechstackFilter('all');
+        setPlatformFilter('all');
         setAvailableFilter('all');
+        setBidStateFilter('all');
         setHasGeneratedResumeFilter(false);
         setDateFrom('');
         setDateTo('');
@@ -1597,20 +1655,32 @@ function JobLinks({ embedded = false }) {
         }
     };
 
-    // Reset to page 1 when debounced filters change. Immediate filters
-    // (techstack, availability, resume checkbox) reset page in their
-    // onChange handlers so the fetch never runs with a stale page.
-    //
-    // We skip the first run so navigating back from the job-link detail
-    // page doesn't clobber the URL-seeded page number.
-    const filtersTouchedRef = useRef(false);
+    // Reset to page 1 when debounced filters actually change. Compare
+    // against the hydrated snapshot instead of "skip first effect"
+    // — React Strict Mode re-runs effects, and that skip-first ref
+    // was sending users back to page 1 after opening a job and
+    // clicking Back.
+    const hydratedDebouncedRef = useRef({
+        search: initialFiltersRef.current.search,
+        dateFrom: initialFiltersRef.current.dateFrom,
+        dateTo: initialFiltersRef.current.dateTo
+    });
     useEffect(() => {
-        if (!filtersTouchedRef.current) {
-            filtersTouchedRef.current = true;
+        const prev = hydratedDebouncedRef.current;
+        if (
+            debouncedSearch === prev.search
+            && debouncedDateFrom === prev.dateFrom
+            && debouncedDateTo === prev.dateTo
+        ) {
             return;
         }
+        hydratedDebouncedRef.current = {
+            search: debouncedSearch,
+            dateFrom: debouncedDateFrom,
+            dateTo: debouncedDateTo
+        };
         setPage(1);
-    }, [debouncedSearch, debouncedDateFrom, debouncedDateTo]);
+    }, [debouncedSearch, debouncedDateFrom, debouncedDateTo, setPage]);
 
     // Data fetch ----------------------------------------------------------
     const loadRequestRef = useRef(0);
@@ -1621,10 +1691,12 @@ function JobLinks({ embedded = false }) {
             const filters = {};
             if (debouncedSearch)     filters.search = debouncedSearch;
             if (techstackFilter !== 'all') filters.techstack = techstackFilter;
+            if (platformFilter !== 'all') filters.platform = platformFilter;
             if (availableFilter !== 'all') filters.available = availableFilter;
             if (debouncedDateFrom)   filters.date_from = debouncedDateFrom;
             if (debouncedDateTo)     filters.date_to = debouncedDateTo;
             if (hasGeneratedResumeFilter) filters.has_generated_resume = 1;
+            if (bidStateFilter && bidStateFilter !== 'all') filters.bid_state = bidStateFilter;
 
             try {
                 const [listRes, cronRes] = await Promise.all([
@@ -1633,12 +1705,15 @@ function JobLinks({ embedded = false }) {
                 ]);
                 return { listRes, cronRes };
             } catch (err) {
-                // Brief API restarts (file watch) — retry once before showing empty.
-                const networky = !err?.response
+                // Brief API restarts (file watch / Vite proxy) — retry before showing empty.
+                // Vite often surfaces a dead backend as HTTP 500, not ERR_NETWORK.
+                const status = err?.response?.status;
+                const retriable = !err?.response
                     || err?.code === 'ERR_NETWORK'
+                    || (status >= 500 && status <= 599)
                     || /ECONNREFUSED|Network Error|Failed to fetch/i.test(String(err?.message || ''));
-                if (networky && attempt < 2) {
-                    await new Promise((r) => setTimeout(r, 800));
+                if (retriable && attempt < 3) {
+                    await new Promise((r) => setTimeout(r, 700 * attempt));
                     return attemptLoad(attempt + 1);
                 }
                 throw err;
@@ -1668,7 +1743,7 @@ function JobLinks({ embedded = false }) {
                 if (!silent) setTableLoading(false);
             }
         }
-    }, [page, limit, debouncedSearch, techstackFilter, availableFilter, hasGeneratedResumeFilter, debouncedDateFrom, debouncedDateTo]);
+    }, [page, limit, debouncedSearch, techstackFilter, platformFilter, availableFilter, bidStateFilter, hasGeneratedResumeFilter, debouncedDateFrom, debouncedDateTo]);
 
     useEffect(() => {
         load();
@@ -1783,17 +1858,74 @@ function JobLinks({ embedded = false }) {
         }
     };
 
+    const openJobLink = (rowId) => {
+        const snapshot = {
+            page,
+            search,
+            techstack: techstackFilter,
+            platform: platformFilter,
+            available: availableFilter,
+            bidState: bidStateFilter,
+            hasGeneratedResume: hasGeneratedResumeFilter,
+            dateFrom,
+            dateTo,
+            today: isTodayActive
+        };
+        writeSavedJobLinksListState(snapshot);
+        navigate(`${detailPrefix}/${rowId}${jobLinksListStateToQuery(snapshot)}`);
+    };
+
     const handleRefetch = async (row) => {
+        const jdEmpty = !(row.job_description && String(row.job_description).trim());
+        setRefreshingRowIds((prev) => {
+            const next = new Set(prev);
+            next.add(row.id);
+            return next;
+        });
         try {
-            await adminAPI.refetchJobLink(row.id);
-            setRows((prev) => prev.map((r) => (
-                r.id === row.id
-                    ? { ...r, fetch_status: 'pending', fetch_error: null }
-                    : r
-            )));
+            if (jdEmpty) {
+                await adminAPI.refetchJobLink(row.id);
+                setRows((prev) => prev.map((r) => (
+                    r.id === row.id
+                        ? { ...r, fetch_status: 'pending', fetch_error: null }
+                        : r
+                )));
+            }
+            const res = await adminAPI.reconcileJobLinkCvs(row.id);
+            const n = Number(res.data?.enqueued) || 0;
+            if (n > 0 || !jdEmpty) {
+                await load({ silent: true });
+            }
         } catch (err) {
-            alert(`Refetch failed: ${err.response?.data?.error || err.message}`);
+            const msg = err.response?.data?.error || err.message;
+            if (jdEmpty) {
+                alert(`Refresh failed: ${msg}`);
+            } else {
+                alert(`Could not generate missing CVs: ${msg}`);
+            }
+        } finally {
+            setRefreshingRowIds((prev) => {
+                const next = new Set(prev);
+                next.delete(row.id);
+                return next;
+            });
         }
+    };
+
+    const handleRefreshPage = async () => {
+        const ids = (selectedIds.size > 0 ? [...selectedIds] : rows.map((r) => r.id))
+            .filter((id) => Number.isFinite(id) && id > 0);
+        setSyncingCvs(true);
+        try {
+            if (ids.length > 0) {
+                await adminAPI.reconcileJobLinksCvs(ids);
+            }
+        } catch (err) {
+            alert(`Could not generate missing CVs: ${err.response?.data?.error || err.message}`);
+        } finally {
+            setSyncingCvs(false);
+        }
+        await load();
     };
 
     // Bulk Apply — mark every pending application under this
@@ -1844,7 +1976,7 @@ function JobLinks({ embedded = false }) {
                                 <Input
                                     id="jl-search"
                                     className="h-10 border-white/10 bg-black/25 pl-10"
-                                    placeholder="Search company, stack, URL…"
+                                    placeholder="Search company, profile, URL…"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                 />
@@ -1852,8 +1984,17 @@ function JobLinks({ embedded = false }) {
                         )}
                         actions={(
                             <>
-                                <Button variant="outline" size="sm" className="h-10" onClick={load} disabled={tableLoading}>
-                                    <RefreshCw className={cn('h-4 w-4', tableLoading && 'animate-spin')} />
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-10"
+                                    onClick={handleRefreshPage}
+                                    disabled={tableLoading || syncingCvs}
+                                    title={selectedIds.size
+                                        ? `Generate missing CVs for ${selectedIds.size} selected job(s)`
+                                        : 'Reload the list and generate CVs for matching profiles that do not have one yet'}
+                                >
+                                    <RefreshCw className={cn('h-4 w-4', (tableLoading || syncingCvs) && 'animate-spin')} />
                                     <span className="hidden sm:inline">Refresh</span>
                                 </Button>
                                 <Button
@@ -1894,6 +2035,17 @@ function JobLinks({ embedded = false }) {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                <Select value={platformFilter} onValueChange={changePlatformFilter}>
+                                    <SelectTrigger className="h-9 w-[10.5rem] border-white/10 bg-black/20">
+                                        <SelectValue placeholder="Platform" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All platforms</SelectItem>
+                                        {PLATFORMS.map((p) => (
+                                            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                                 <Select value={availableFilter} onValueChange={changeAvailableFilter}>
                                     <SelectTrigger className="h-9 w-[8.5rem] border-white/10 bg-black/20">
                                         <SelectValue placeholder="Availability" />
@@ -1902,6 +2054,17 @@ function JobLinks({ embedded = false }) {
                                         <SelectItem value="all">All status</SelectItem>
                                         <SelectItem value="1">Available</SelectItem>
                                         <SelectItem value="0">Unavailable</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Select value={bidStateFilter} onValueChange={changeBidStateFilter}>
+                                    <SelectTrigger className="h-9 w-[9.5rem] border-white/10 bg-black/20">
+                                        <SelectValue placeholder="Bid state" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All bids</SelectItem>
+                                        <SelectItem value="success">SUCCESS</SelectItem>
+                                        <SelectItem value="filled">FILLED</SelectItem>
+                                        <SelectItem value="failed">FAILED</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <div className="w-[9rem]">
@@ -1993,7 +2156,7 @@ function JobLinks({ embedded = false }) {
                             </div>
                         ) : (
                             rows.map((row, idx) => {
-                                const av = AVAILABILITY_META[row.is_available] || AVAILABILITY_META[1];
+                                const av = jobLinkAvailabilityMeta(row);
                                 const fs = FETCH_STATUS_META[row.fetch_status] || FETCH_STATUS_META.pending;
                                 const jd = jdStatusMeta(row);
                                 const rowNumber = (page - 1) * limit + idx + 1;
@@ -2015,13 +2178,14 @@ function JobLinks({ embedded = false }) {
                                                 return next;
                                             });
                                         }}
-                                        onOpen={() => navigate(`${detailPrefix}/${row.id}${location.search}`)}
+                                        onOpen={() => openJobLink(row.id)}
                                         onToggleAvailable={() => handleToggleAvailable(row)}
                                         onBid={() => {
                                             setSelectedIds(new Set([row.id]));
                                             setAutoBidderOpen(true);
                                         }}
                                         onRefetch={() => handleRefetch(row)}
+                                        refetching={refreshingRowIds.has(row.id)}
                                         onView={() => { setViewRow(row); setViewOpen(true); }}
                                         onEdit={() => { setEditRow(row); setEditOpen(true); }}
                                         onDelete={() => handleDelete(row)}

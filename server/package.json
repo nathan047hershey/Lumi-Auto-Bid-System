@@ -9,7 +9,7 @@
     "dev:watch": "node --watch-path=./index.js --watch-path=./routes --watch-path=./services --watch-path=./config --watch-path=./middleware --watch-path=./utils index.js"
   },
   "dependencies": {
-    "adm-zip": "^0.5.17",
+    "adm-zip": "^0.6.0",
     "amqplib": "^2.0.1",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
@@ -18,9 +18,9 @@
     "docx": "^8.5.0",
     "docx-html": "^1.0.5",
     "dotenv": "^17.4.2",
-    "express": "^4.18.2",
+    "express": "^5.2.1",
     "html-docx": "^1.2.0",
-    "html-to-docx": "^1.8.0",
+    "html-to-docx": "^1.1.2",
     "html-to-docx-lite": "^2.0.1",
     "imapflow": "^1.7.8",
     "jsdom": "^29.1.1",

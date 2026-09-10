@@ -1,0 +1,10 @@
+'use strict';
+const fs = require('fs');
+const p = 'client/src/components/job-links/AutoBidderDialog.jsx';
+let s = fs.readFileSync(p, 'utf8');
+s = s.replace(/Microsoft Graph .{1,3} multiple mailboxes/, 'Microsoft Graph — multiple mailboxes');
+s = s.replace(/Same Azure app .{1,3} just Add/, 'Same Azure app — just Add');
+s = s.replace(/Waiting for Microsoft.{1,3}/, 'Waiting for Microsoft…');
+s = s.replace(/\{a\.push_enabled \? '.{1,3} push ON' : '.{1,3} push off'\}/, "{a.push_enabled ? '· push ON' : '· push off'}");
+fs.writeFileSync(p, s);
+console.log('encoding fixes applied');

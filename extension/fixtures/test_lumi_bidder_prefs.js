@@ -13,18 +13,27 @@ const DEFAULT = {
     captchaFocus: false,
     uploadCoverLetter: false,
     soundEnabled: true,
+    humanAssistWaitSec: 90,
     capsolverApiKey: '',
     twocaptchaApiKey: ''
 };
 
+function clampHumanAssistWaitSec(value, fallback = DEFAULT.humanAssistWaitSec) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(600, Math.round(n)));
+}
+
 function prefsToExtensionPatch(prefs) {
     const p = { ...DEFAULT, ...prefs };
+    const waitSec = clampHumanAssistWaitSec(p.humanAssistWaitSec);
     return {
         bidderStayInApp: !!p.stayInApp,
         bidderUnattended: !!p.unattended,
         bidderCaptchaHelper: true,
-        bidderCaptchaHelperWaitSec: 90,
-        bidderCaptchaGraceSec: 45,
+        bidderHumanAssistWaitSec: waitSec,
+        bidderCaptchaHelperWaitSec: waitSec,
+        bidderCaptchaGraceSec: waitSec,
         bidderAutoSubmit: !!p.autoSubmit,
         bidderAutoNext: !!p.autoNext,
         bidderCaptchaFocus: p.unattended ? false : !!p.captchaFocus,
@@ -37,14 +46,16 @@ function prefsToExtensionPatch(prefs) {
 
 function processQueuePrefsPayload(prefs) {
     const p = { ...DEFAULT, ...prefs };
+    const waitSec = clampHumanAssistWaitSec(p.humanAssistWaitSec);
     return {
         stayInApp: !!p.stayInApp,
         unattended: !!p.unattended,
         autoSubmit: !!p.autoSubmit,
         autoNext: !!p.autoNext,
-        captchaGraceSec: p.unattended ? 45 : undefined,
+        humanAssistWaitSec: waitSec,
+        captchaGraceSec: waitSec,
         captchaHelper: true,
-        captchaHelperWaitSec: 90,
+        captchaHelperWaitSec: waitSec,
         uploadCoverLetter: !!p.uploadCoverLetter
     };
 }
@@ -65,15 +76,22 @@ const payload = processQueuePrefsPayload({
     capsolverApiKey: 'CAP-p',
     twocaptchaApiKey: 'x'
 });
+const patchCustom = prefsToExtensionPatch({ humanAssistWaitSec: 120 });
+const payloadZero = processQueuePrefsPayload({ humanAssistWaitSec: 0 });
 
 const checks = [
     ['AFK clears captchaFocus in ext patch', patch.bidderCaptchaFocus === false],
     ['ext clears capsolver', patch.bidderCapsolverApiKey === ''],
     ['ext clears 2captcha', patch.bidderTwocaptchaApiKey === ''],
     ['cover letter', patch.bidderUploadCoverLetter === true],
-    ['helper wait AFK 90', patch.bidderCaptchaHelperWaitSec === 90],
-    ['process grace 45', payload.captchaGraceSec === 45],
-    ['process helper wait 90', payload.captchaHelperWaitSec === 90],
+    ['helper wait default 90', patch.bidderCaptchaHelperWaitSec === 90],
+    ['grace equals human wait', patch.bidderCaptchaGraceSec === 90],
+    ['human assist key set', patch.bidderHumanAssistWaitSec === 90],
+    ['process grace = wait', payload.captchaGraceSec === 90],
+    ['process helper wait = wait', payload.captchaHelperWaitSec === 90],
+    ['process humanAssistWaitSec', payload.humanAssistWaitSec === 90],
+    ['custom wait 120', patchCustom.bidderHumanAssistWaitSec === 120],
+    ['zero wait allowed', payloadZero.humanAssistWaitSec === 0],
     ['process omits capsolver', payload.capsolverApiKey === undefined],
     ['process omits 2captcha', payload.twocaptchaApiKey === undefined],
     ['process helper forced on', payload.captchaHelper === true],

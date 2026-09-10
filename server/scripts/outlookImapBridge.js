@@ -1,16 +1,22 @@
 'use strict';
 /**
- * Local Outlook.com → Lumi bridge via IMAP IDLE (event-driven, not 60s app poll).
+ * Free local mail → Lumi bridge via IMAP IDLE (Gmail or Outlook).
  *
- * Setup once:
- *   1. Create an Outlook app password: https://account.live.com/proofs/AppPassword
- *   2. Put in server/.env (or local.env):
- *        OUTLOOK_IMAP_USER=you@outlook.com
- *        OUTLOOK_IMAP_PASS=your-app-password
+ * Gmail (recommended, free):
+ *   1. App password: https://myaccount.google.com/apppasswords
+ *   2. server/local.env:
+ *        GMAIL_IMAP_USER=you@gmail.com
+ *        GMAIL_IMAP_PASS=your-16-char-app-password
  *        MAIL_FORWARD_TOKEN=<token from Auto Bidder forward webhook>
- *   3. npm run mail:bridge   (from repo root) or node server/scripts/outlookImapBridge.js
+ *   3. npm run mail:bridge
  *
- * Matching Greenhouse / security-code mail is POSTed to the local inbound webhook.
+ * Outlook.com (also free with app password):
+ *        OUTLOOK_IMAP_USER=you@outlook.com
+ *        OUTLOOK_IMAP_PASS=...
+ *        OUTLOOK_IMAP_HOST=imap-mail.outlook.com
+ *
+ * Prefer in-app Auto Bidder → Gmail (free) connect — no separate process needed.
+ * This script is for when you want IDLE outside the API process.
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -22,8 +28,25 @@ require('dotenv').config({
 const { ImapFlow } = require('imapflow');
 const axios = require('axios');
 
-const USER = String(process.env.OUTLOOK_IMAP_USER || '').trim();
-const PASS = String(process.env.OUTLOOK_IMAP_PASS || '').trim();
+const GMAIL_USER = String(process.env.GMAIL_IMAP_USER || '').trim();
+const GMAIL_PASS = String(process.env.GMAIL_IMAP_PASS || '').replace(/\s+/g, '');
+const OUTLOOK_USER = String(process.env.OUTLOOK_IMAP_USER || '').trim();
+const OUTLOOK_PASS = String(process.env.OUTLOOK_IMAP_PASS || '').replace(/\s+/g, '');
+
+const provider = GMAIL_USER && GMAIL_PASS
+    ? {
+        name: 'gmail',
+        user: GMAIL_USER,
+        pass: GMAIL_PASS,
+        host: String(process.env.GMAIL_IMAP_HOST || 'imap.gmail.com').trim()
+    }
+    : {
+        name: 'outlook',
+        user: OUTLOOK_USER,
+        pass: OUTLOOK_PASS,
+        host: String(process.env.OUTLOOK_IMAP_HOST || 'imap-mail.outlook.com').trim()
+    };
+
 const TOKEN = String(process.env.MAIL_FORWARD_TOKEN || '').trim();
 const PORT = process.env.PORT || 9017;
 const WEBHOOK = String(
@@ -55,7 +78,6 @@ async function handleUid(client, uid) {
     const subject = (raw.match(/^Subject:\s*(.+)$/im)?.[1] || '').replace(/\r/g, '').trim();
     const from = (raw.match(/^From:\s*(.+)$/im)?.[1] || '').replace(/\r/g, '').trim();
     const messageId = (raw.match(/^Message-ID:\s*(.+)$/im)?.[1] || '').replace(/\r/g, '').trim();
-    // crude body: after first blank line
     const split = raw.split(/\r?\n\r?\n/);
     const text = split.slice(1).join('\n\n').slice(0, 50000);
     if (!interesting(subject, from, text)) {
@@ -73,35 +95,34 @@ async function handleUid(client, uid) {
 }
 
 async function main() {
-    if (!USER || !PASS) {
-        console.error('[mail-bridge] Set OUTLOOK_IMAP_USER and OUTLOOK_IMAP_PASS in server/local.env');
-        console.error('[mail-bridge] Create app password at https://account.live.com/proofs/AppPassword');
+    if (!provider.user || !provider.pass) {
+        console.error('[mail-bridge] Set free IMAP credentials in server/local.env:');
+        console.error('  Gmail:   GMAIL_IMAP_USER + GMAIL_IMAP_PASS (https://myaccount.google.com/apppasswords)');
+        console.error('  Outlook: OUTLOOK_IMAP_USER + OUTLOOK_IMAP_PASS');
         process.exit(1);
     }
     if (!TOKEN && !process.env.MAIL_BRIDGE_WEBHOOK) {
         console.error('[mail-bridge] Set MAIL_FORWARD_TOKEN (from Auto Bidder → Enable email forward)');
+        console.error('[mail-bridge] Or use in-app Gmail (free) connect — no bridge script needed.');
         process.exit(1);
     }
 
-    // Personal Outlook.com: imap-mail.outlook.com. M365/work: outlook.office365.com.
-    const host = String(process.env.OUTLOOK_IMAP_HOST || 'imap-mail.outlook.com').trim();
     const client = new ImapFlow({
-        host,
+        host: provider.host,
         port: 993,
         secure: true,
-        auth: { user: USER, pass: PASS },
+        auth: { user: provider.user, pass: provider.pass },
         logger: false
     });
-    console.log('[mail-bridge] connecting to', host, 'as', USER);
+    console.log(`[mail-bridge] ${provider.name} connecting to`, provider.host, 'as', provider.user);
 
     client.on('error', (err) => console.error('[mail-bridge] error', err?.message || err));
 
     await client.connect();
-    console.log('[mail-bridge] connected as', USER, '→', WEBHOOK.replace(/token=[^&]+/, 'token=…'));
+    console.log('[mail-bridge] connected as', provider.user, '→', WEBHOOK.replace(/token=[^&]+/, 'token=…'));
 
     const lock = await client.getMailboxLock('INBOX');
     try {
-        // Catch recent unread that may already be waiting
         for await (const msg of client.fetch({ seen: false, since: new Date(Date.now() - 2 * 24 * 3600 * 1000) }, { uid: true })) {
             try {
                 await handleUid(client, msg.uid);
@@ -117,9 +138,6 @@ async function main() {
         try {
             const lock2 = await client.getMailboxLock('INBOX');
             try {
-                const status = client.mailbox;
-                if (!status?.exists) return;
-                const uid = status.exists; // sequence approx; better: search recent
                 const uids = await client.search({ seen: false }, { uid: true });
                 const list = Array.isArray(uids) ? uids.slice(-5) : [];
                 for (const id of list) {
@@ -133,7 +151,6 @@ async function main() {
         }
     });
 
-    // Keep IDLE alive
     // eslint-disable-next-line no-constant-condition
     while (true) {
         try {

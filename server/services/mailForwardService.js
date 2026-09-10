@@ -136,6 +136,25 @@ function normalizeInboundPayload(req) {
         };
     }
 
+    // Inbox Bridge / inbound.new free webhook JSON
+    if (body.email && typeof body.email === 'object') {
+        const em = body.email;
+        const parsed = em.parsedData || em;
+        const from = parsed.from || {};
+        const fromAddr = from.address || from.email
+            || (Array.isArray(from.addresses) ? from.addresses[0]?.address : '')
+            || '';
+        return {
+            subject: parsed.subject || em.subject || '',
+            from_address: fromAddr,
+            from_name: from.name || '',
+            text: parsed.textBody || parsed.text || em.text || '',
+            html: parsed.htmlBody || parsed.html || em.html || '',
+            message_id: parsed.messageId || em.messageId || em.id || null,
+            received_at: parsed.date || em.received_at || new Date().toISOString()
+        };
+    }
+
     // SendGrid Inbound Parse often uses multipart; text fields land in body
     if (body.text || body.html || body.email) {
         const fromRaw = body.from || body.envelope || '';

@@ -89,7 +89,7 @@ async function checkJobLinkAlive(url, timeoutMs = 15000) {
         const body = String(res.data || '').slice(0, 80000);
         const lower = body.toLowerCase();
         if (
-            /no longer available|job has been filled|position has been filled|this job is closed|page not found|couldn't find that job|job posting is no longer/i.test(
+            /no longer available|no longer open|job has been filled|position has been filled|this job is closed|page not found|couldn't find that job|job posting is no longer/i.test(
                 lower
             )
         ) {

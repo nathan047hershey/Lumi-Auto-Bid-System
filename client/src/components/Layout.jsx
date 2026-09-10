@@ -18,7 +18,8 @@ import {
     Sparkles,
     ChevronDown,
     Home,
-    TrendingUp
+    TrendingUp,
+    Mail
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '@/lib/utils';
@@ -201,7 +202,8 @@ function buildNavTree({ isAdmin, isCaller, isManagerOnly, isDeveloperOnly, hasMa
                 ]
             },
             { to: '/user/generate', label: 'Resume', icon: FileText, match: ['/user/generate'] },
-            { to: '/user/cv-quality', label: 'CV Quality', icon: ClipboardList, match: ['/user/cv-quality'] }
+            { to: '/user/cv-quality', label: 'CV Quality', icon: ClipboardList, match: ['/user/cv-quality'] },
+            { to: '/user/inbox', label: 'Inbox', icon: Mail, match: ['/user/inbox'] }
         ],
         more
     };

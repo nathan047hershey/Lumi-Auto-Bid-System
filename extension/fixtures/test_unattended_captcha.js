@@ -21,6 +21,7 @@ function shouldAbandonUnattended({ unattended, cleared, graceElapsed, graceMs })
 const checks = [];
 checks.push(['defaults unattended off', BIDDER_DEFAULTS.unattended === false]);
 checks.push(['defaults grace 45s', BIDDER_DEFAULTS.captchaGraceMs === 45000]);
+checks.push(['defaults human assist 90s', BIDDER_DEFAULTS.humanAssistWaitMs === 90000]);
 checks.push(['defaults attended timeout 1h', BIDDER_DEFAULTS.captchaTimeoutMs === 3600000]);
 
 checks.push([

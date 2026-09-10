@@ -41,6 +41,7 @@ const templateRenderer = require('../services/templateRenderer');
 const userTemplateService = require('../services/userTemplateService');
 const outlookMail = require('../services/outlookMailService');
 const mailForward = require('../services/mailForwardService');
+const gmailImap = require('../services/gmailImapService');
 
 const router = express.Router();
 
@@ -462,14 +463,20 @@ router.post('/generate-resume', async (req, res) => {
 
         const genStatus = draftStatus;
         const genError = validation.pass ? null : validation.issues.join('; ');
+        const savedMs = generationMs != null ? Math.max(1, Math.round(Number(generationMs) || 0)) : null;
+        const finishedIso = new Date().toISOString();
+        const startedIso = savedMs
+            ? new Date(Date.now() - savedMs).toISOString()
+            : finishedIso;
 
         const result = runQuery(`
       INSERT INTO job_applications (
         profile_id, company_name, job_role, core_skills, job_description, job_url,
         resume_filename, applier_id, status, template_id, font_family,
-        draft_html, generation_status, generation_error
+        draft_html, generation_status, generation_error, generation_ms,
+        generation_started_at, generation_finished_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
             parseInt(profile_id),
             finalCompany,
@@ -483,7 +490,10 @@ router.post('/generate-resume', async (req, res) => {
             resolvedFont,
             resumeHtml,
             genStatus,
-            genError
+            genError,
+            savedMs,
+            startedIso,
+            finishedIso
         ]);
 
         const applicationId = result.lastInsertRowid;
@@ -510,6 +520,7 @@ router.post('/generate-resume', async (req, res) => {
             job_role: (providedRole || '').trim(),
             core_skills: (providedSkills || '').trim(),
             job_url: (providedUrl || '').trim(),
+            job_description: job_description,
             resume_filename: resumeFilename || null,
             resume_pdf_filename: resumePdfFilename || null,
             resume_content: resumeHtml,
@@ -638,6 +649,7 @@ router.post('/regenerate-resume', async (req, res) => {
             generation_status: genStatus,
             is_finalized: isFinalized,
             resume_filename: resumeFilename,
+            resume_upload_filename: resumeUploadFilename,
             resume_pdf_filename: resumePdfFilename,
             llm_ms: llmMs,
             polish_ms: polishMs,
@@ -677,6 +689,14 @@ router.post('/regenerate-resume', async (req, res) => {
             }
         }
 
+        const savedMs = generationMs != null
+            ? Math.max(1, Math.round(Number(generationMs) || 0))
+            : existing.generation_ms;
+        const finishedIso = new Date().toISOString();
+        const startedIso = savedMs
+            ? new Date(Date.now() - Number(savedMs)).toISOString()
+            : finishedIso;
+
         runQuery(`
       UPDATE job_applications
       SET resume_filename = ?,
@@ -685,7 +705,10 @@ router.post('/regenerate-resume', async (req, res) => {
           template_id = COALESCE(?, template_id),
           font_family = COALESCE(?, font_family),
           generation_status = ?,
-          generation_error = ?
+          generation_error = ?,
+          generation_ms = ?,
+          generation_started_at = ?,
+          generation_finished_at = ?
       WHERE id = ?
     `, [
             resumeFilename || null,
@@ -694,6 +717,9 @@ router.post('/regenerate-resume', async (req, res) => {
             resolvedFont || null,
             genStatus,
             genError,
+            savedMs,
+            startedIso,
+            finishedIso,
             existing.id
         ]);
 
@@ -721,6 +747,8 @@ router.post('/regenerate-resume', async (req, res) => {
             core_skills: regenBody.core_skills || existing.core_skills || '',
             job_url: existing.job_url || '',
             resume_filename: resumeFilename || null,
+            upload_filename: resumeUploadFilename || null,
+            resume_upload_filename: resumeUploadFilename || null,
             resume_pdf_filename: resumePdfFilename || null,
             resume_content: resumeHtml,
             resume_html: resumeHtml,
@@ -1193,12 +1221,11 @@ router.patch('/applications/:id', (req, res) => {
             });
         }
 
-        // Verify user has access to this application's profile
-        const application = getOne(`
-      SELECT a.* FROM job_applications a
-      JOIN user_profile_assignments ua ON a.profile_id = ua.profile_id
-      WHERE a.id = ? AND ua.user_id = ?
-    `, [parseInt(id), req.user.id]);
+        // Same access as bidder GET — admins can mark any row applied.
+        // Assigned-only JOIN used to 404 after a real site thank-you
+        // ("Application not found or access denied") and the panel
+        // showed SKIPPED.
+        const application = getAccessibleApplication(id, req);
 
         if (!application) {
             return res.status(404).json({ error: 'Application not found or access denied' });
@@ -2382,10 +2409,110 @@ router.get('/resumes/:filename', (req, res) => {
             return res.status(404).json({ error: 'Resume not found' });
         }
 
-        res.download(filepath, filename);
+        // Prefer clean First_Last.docx for the browser download label when
+        // the stored file is an archive name (resume_…_company_ts.docx).
+        let downloadAs = filename;
+        try {
+            const { buildUploadResumeFilename } = require('../services/resumeService');
+            if (/^resume_/i.test(String(filename)) && req.query?.as !== 'archive') {
+                // Best-effort: parse first_last from archive pattern.
+                const m = String(filename).match(/^resume_([^_]+)_([^_]+)_/i);
+                if (m) {
+                    downloadAs = buildUploadResumeFilename({
+                        first_name: m[1],
+                        last_name: m[2]
+                    });
+                }
+            }
+        } catch (_) { /* keep archive name */ }
+
+        res.download(filepath, downloadAs);
     } catch (error) {
         console.error('Download resume error:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * GET /api/user/resume-folder
+ * Build a unique folder (not zip) with First_Last.docx inside, then stream the CV.
+ * Folder name: Company__Full_Name__Title__YYYY-MM-DD_HHMMSS
+ * Query: filename (archive), profile_id, company_name, job_role, application_id
+ * Also opens the package folder on local Windows when ?open=1.
+ */
+router.get('/resume-folder', async (req, res) => {
+    try {
+        const {
+            writeResumePackageFolder,
+            buildUploadResumeFilename
+        } = require('../services/resumeService');
+        const { RESUMES_PACKAGES_DIR } = require('../config/paths');
+
+        let profile = null;
+        let companyName = String(req.query.company_name || '').trim();
+        let jobRole = String(req.query.job_role || '').trim();
+        let archiveName = String(req.query.filename || '').trim();
+        const applicationId = parseInt(req.query.application_id, 10);
+
+        if (Number.isInteger(applicationId) && applicationId > 0) {
+            const app = getOne(`SELECT * FROM job_applications WHERE id = ?`, [applicationId]);
+            if (!app) return res.status(404).json({ error: 'Application not found' });
+            profile = getAccessibleProfile(app.profile_id, req);
+            if (!profile) return res.status(403).json({ error: 'Profile not accessible' });
+            archiveName = archiveName || app.resume_filename || '';
+            companyName = companyName || app.company_name || '';
+            jobRole = jobRole || app.job_role || '';
+        } else {
+            const profileId = parseInt(req.query.profile_id, 10);
+            if (!Number.isInteger(profileId) || profileId <= 0) {
+                return res.status(400).json({ error: 'profile_id or application_id required' });
+            }
+            profile = getAccessibleProfile(profileId, req);
+            if (!profile) return res.status(404).json({ error: 'Profile not found' });
+        }
+
+        if (!archiveName) {
+            return res.status(400).json({ error: 'resume filename required' });
+        }
+
+        const srcPath = path.join(resumesDir, archiveName);
+        if (!fs.existsSync(srcPath)) {
+            return res.status(404).json({ error: 'Resume file not found' });
+        }
+
+        const pkg = await writeResumePackageFolder({
+            resumeFilePath: srcPath,
+            profile,
+            companyName,
+            jobRole
+        });
+        if (!pkg?.filePath) {
+            return res.status(500).json({ error: 'Failed to create resume package folder' });
+        }
+
+        if (String(req.query.meta || '') === '1') {
+            return res.json({
+                folder_name: pkg.folderName,
+                cv_filename: pkg.cvFilename,
+                folder_path: pkg.folderPath,
+                relative_url: pkg.relativeUrl,
+                packages_root: RESUMES_PACKAGES_DIR
+            });
+        }
+
+        if (String(req.query.open || '') === '1' && process.platform === 'win32') {
+            try {
+                const { execFile } = require('child_process');
+                execFile('explorer.exe', [pkg.folderPath], { windowsHide: true }, () => {});
+            } catch (_) { /* ignore */ }
+        }
+
+        // Stream as FolderName/First_Last.docx so Chrome Downloads creates a real folder (not zip).
+        const downloadAs = `${pkg.folderName}/${pkg.cvFilename || buildUploadResumeFilename(profile)}`;
+        res.download(pkg.filePath, downloadAs);
+    } catch (error) {
+        console.error('Resume folder download error:', error);
+        res.status(500).json({ error: error.message || 'Failed to download resume folder' });
     }
 });
 
@@ -2688,7 +2815,8 @@ router.post('/bidder/brain/answers', async (req, res) => {
             questions,
             company_name,
             job_role,
-            application_id
+            application_id,
+            force_regenerate
         } = req.body || {};
         if (!profile_id) return res.status(400).json({ error: 'profile_id is required' });
         if (!Array.isArray(questions) || !questions.length) {
@@ -2712,6 +2840,9 @@ router.post('/bidder/brain/answers', async (req, res) => {
 
         const brain = require('../services/bidderBrainService');
         const { withUsageContext } = require('../services/aiUsageService');
+        const forceRegenerate = force_regenerate === true
+            || force_regenerate === 1
+            || force_regenerate === '1';
         const result = await withUsageContext(
             { userId: req.user.id, profileId: profile.id, kind: 'bidder' },
             () => brain.generateBidderAnswers({
@@ -2721,7 +2852,9 @@ router.post('/bidder/brain/answers', async (req, res) => {
                 questions,
                 companyName,
                 jobRole,
-                userId: req.user.id
+                userId: req.user.id,
+                applicationId: application_id || null,
+                forceRegenerate
             })
         );
         res.json(result);
@@ -2738,14 +2871,34 @@ router.post('/bidder/brain/cv-check', (req, res) => {
         let draftHtml = body.draft_html || body.resume_html || '';
         let jobDescription = body.job_description || '';
         let resumeFilename = body.resume_filename || '';
+        let uploadFilename = body.upload_filename || body.resume_upload_filename || '';
+        let profile = null;
         if (body.application_id) {
             const app = getAccessibleApplication(body.application_id, req);
             if (!app) return res.status(404).json({ error: 'Application not found' });
             draftHtml = draftHtml || app.draft_html || '';
             jobDescription = jobDescription || app.job_description || '';
             resumeFilename = resumeFilename || app.resume_filename || '';
+            if (app.profile_id) {
+                profile = getAccessibleProfile(app.profile_id, req) || null;
+            }
         }
-        const assessment = brain.assessCvQuality({ draftHtml, jobDescription, resumeFilename });
+        if (!profile && body.profile_id) {
+            profile = getAccessibleProfile(body.profile_id, req) || null;
+        }
+        if (profile && !uploadFilename) {
+            try {
+                const { buildUploadResumeFilename } = require('../services/resumeService');
+                uploadFilename = buildUploadResumeFilename(profile);
+            } catch (_) { /* ignore */ }
+        }
+        const assessment = brain.assessCvQuality({
+            draftHtml,
+            jobDescription,
+            resumeFilename,
+            uploadFilename,
+            profile
+        });
         res.json(assessment);
     } catch (error) {
         res.status(500).json({ error: error.message || 'CV check failed' });
@@ -2853,12 +3006,18 @@ router.post('/bidder/brain/instruct', async (req, res) => {
 
         let companyName = body.company_name || '';
         let jobRole = body.job_role || '';
+        let jobDescription = body.job_description || body.jd || '';
         let profile = null;
         if (body.application_id) {
             const app = getAccessibleApplication(body.application_id, req);
             if (app) {
                 companyName = companyName || app.company_name || '';
                 jobRole = jobRole || app.job_role || '';
+                jobDescription = jobDescription
+                    || app.job_description
+                    || app.jd_text
+                    || app.description
+                    || '';
                 if (app.profile_id) {
                     profile = getAccessibleProfile(app.profile_id, req);
                 }
@@ -2894,7 +3053,8 @@ router.post('/bidder/brain/instruct', async (req, res) => {
             companyName,
             jobRole,
             ats: body.ats || '',
-            host
+            host,
+            jobDescription
         });
 
         if (result.ok && host && (result.fills?.length || result.clickSubmit)) {
@@ -2907,7 +3067,9 @@ router.post('/bidder/brain/instruct', async (req, res) => {
                 instruction,
                 actions: {
                     fills: result.fills,
-                    clickSubmit: !!result.clickSubmit
+                    clickSubmit: !!result.clickSubmit,
+                    queueControl: result.queueControl || null,
+                    reAutofill: !!result.reAutofill
                 },
                 ats: body.ats || '',
                 source: 'user_instruct'
@@ -2997,6 +3159,33 @@ router.post('/bidder/brain/question-memory/upsert', (req, res) => {
         res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message || 'Upsert failed' });
+    }
+});
+
+router.post('/bidder/brain/question-memory/teach', async (req, res) => {
+    try {
+        const qm = require('../services/questionMemoryService');
+        const body = req.body || {};
+        const extraRoles = Array.isArray(req.user.additional_roles) ? req.user.additional_roles : [];
+        const isAdmin = req.user.role === 'admin' || extraRoles.includes('admin');
+        const isManager = req.user.role === 'manager' || extraRoles.includes('manager');
+        const result = await qm.teachAndCheck({
+            userId: req.user.id,
+            question: body.question || body.question_text || '',
+            answer: body.answer || body.answer_text || '',
+            instruction: body.instruction || '',
+            checkQuestion: body.check_question || body.checkQuestion || '',
+            save: body.save !== false && body.save !== 0,
+            updateAll: body.update_all === true || body.update_all === 1 || body.updateAll === true,
+            checkAllSites: body.check_all_sites === true || body.check_all_sites === 1
+                || body.checkAllSites === true,
+            isAdmin,
+            isManager
+        });
+        if (!result.ok) return res.status(400).json(result);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message || 'Teach failed' });
     }
 });
 
@@ -3101,15 +3290,16 @@ router.get('/bid-courses', (req, res) => {
     try {
         const profileId = parseInt(req.query.profile_id, 10);
         const bidCourseService = require('../services/bidCourseService');
+        const listOpts = {
+            profileId: Number.isInteger(profileId) && profileId > 0 ? profileId : undefined,
+            limit: parseInt(req.query.limit, 10) || 100,
+            q: req.query.q || req.query.search || undefined,
+            from: req.query.from || req.query.date_from || undefined,
+            to: req.query.to || req.query.date_to || undefined
+        };
         const courses = userIsAdmin(req)
-            ? bidCourseService.listCoursesAll({
-                profileId: Number.isInteger(profileId) && profileId > 0 ? profileId : undefined,
-                limit: parseInt(req.query.limit, 10) || 50
-            })
-            : bidCourseService.listCoursesForUser(req.user.id, {
-                profileId: Number.isInteger(profileId) && profileId > 0 ? profileId : undefined,
-                limit: parseInt(req.query.limit, 10) || 50
-            });
+            ? bidCourseService.listCoursesAll(listOpts)
+            : bidCourseService.listCoursesForUser(req.user.id, listOpts);
         // Attention / failed first (do not treat captcha_cleared as failure)
         const needsAttention = (c) => {
             const t = String(c.last_event_type || '');
@@ -3222,6 +3412,109 @@ router.get('/bid-courses/:id', (req, res) => {
     } catch (error) {
         console.error('Bid course detail error:', error);
         res.status(500).json({ error: error.message || 'Failed to load course' });
+    }
+});
+
+/**
+ * POST /api/user/bid-courses/:id/correct-answer
+ * Fix a wrong answer in Auto Bidder history and teach memory for next time.
+ */
+router.post('/bid-courses/:id/correct-answer', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ error: 'Invalid course id' });
+        }
+        const bidCourseService = require('../services/bidCourseService');
+        const questionMemory = require('../services/questionMemoryService');
+        const { saveDatabase } = require('../config/database');
+
+        const course = userIsAdmin(req)
+            ? getOne(`SELECT * FROM bid_courses WHERE id = ?`, [id])
+            : getOne(`SELECT * FROM bid_courses WHERE id = ? AND user_id = ?`, [id, req.user.id]);
+        if (!course) return res.status(404).json({ error: 'Course not found' });
+
+        const question = String(req.body?.question || req.body?.label || '').trim();
+        const answer = String(req.body?.answer || req.body?.value || '').trim();
+        if (!question || !answer) {
+            return res.status(400).json({ error: 'question and answer are required' });
+        }
+
+        let answers = [];
+        try {
+            answers = typeof course.answers_json === 'string'
+                ? JSON.parse(course.answers_json || '[]')
+                : (course.answers_json || []);
+        } catch {
+            answers = [];
+        }
+        if (!Array.isArray(answers)) answers = [];
+
+        const idx = Number.isInteger(Number(req.body?.index)) ? Number(req.body.index) : -1;
+        let updated = false;
+        const next = answers.map((a, i) => {
+            const label = String(a?.label || a?.id || '').trim();
+            const matchIdx = idx >= 0 && i === idx;
+            const matchQ = label && label.toLowerCase() === question.toLowerCase();
+            if (!matchIdx && !matchQ) return a;
+            updated = true;
+            return {
+                ...a,
+                label: a.label || question,
+                answer,
+                value: answer,
+                corrected: true,
+                corrected_at: new Date().toISOString(),
+                match_source: 'course_correct'
+            };
+        });
+        if (!updated) {
+            next.push({
+                id: `corrected_${Date.now()}`,
+                label: question,
+                answer,
+                value: answer,
+                corrected: true,
+                corrected_at: new Date().toISOString(),
+                match_source: 'course_correct',
+                lane: 'policy'
+            });
+        }
+
+        runQuery(
+            `UPDATE bid_courses SET answers_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [JSON.stringify(next), course.id]
+        );
+        try { saveDatabase(); } catch (_) { /* ignore */ }
+
+        try {
+            bidCourseService.addEvent(course.id, 'answer_corrected', {
+                question: question.slice(0, 200),
+                answer: answer.slice(0, 200),
+                index: idx
+            });
+        } catch (_) { /* ignore */ }
+
+        const teach = await questionMemory.teachAndCheck({
+            userId: req.user.id,
+            question,
+            answer,
+            instruction: '',
+            save: true,
+            updateAll: !!req.body?.update_all,
+            checkQuestion: '',
+            isAdmin: userIsAdmin(req),
+            isManager: !!req.user?.is_manager
+        });
+
+        res.json({
+            ok: true,
+            course: bidCourseService.getCourseByApplicationId(course.application_id),
+            taught: teach
+        });
+    } catch (error) {
+        console.error('Correct bid course answer error:', error);
+        res.status(500).json({ error: error.message || 'Failed to save correction' });
     }
 });
 
@@ -3489,8 +3782,13 @@ router.post('/analyze/run', async (req, res) => {
 
 // GET /api/user/bidder/ready — Auto Bidder queue: CV-ready apps (oldest first)
 // Optional: job_link_ids=1,2,3 to bid only selected Job Links rows.
+// Eligibility: bidEligibilityRules (stack clash, same title+JD, 3-day company cooldown).
 router.get('/bidder/ready', (req, res) => {
     try {
+        const {
+            filterEligibleReadyApps,
+            COMPANY_COOLDOWN_DAYS
+        } = require('../services/bidEligibilityRules');
         const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
         const profileId = parseInt(req.query.profile_id, 10);
         const isAdmin = userIsAdmin(req);
@@ -3526,12 +3824,16 @@ router.get('/bidder/ready', (req, res) => {
             }
         }
 
-        params.push(limit);
+        // Over-fetch then apply eligibility so LIMIT still fills after skips.
+        const fetchLimit = Math.min(500, Math.max(limit * 4, limit + 20));
+        params.push(fetchLimit);
 
         const rows = getAll(`
       SELECT a.id, a.profile_id, a.company_name, a.job_role, a.job_url,
+             a.job_description, a.core_skills,
              a.resume_filename, a.generation_status, a.status, a.source,
              a.job_link_id, a.match_score, a.created_at, a.updated_at,
+             jl.techstack AS link_techstack,
              p.first_name, p.last_name
       FROM job_applications a
       JOIN candidate_profiles p ON p.id = a.profile_id
@@ -3546,20 +3848,40 @@ router.get('/bidder/ready', (req, res) => {
         AND a.job_url IS NOT NULL
         AND TRIM(a.job_url) <> ''
         AND (a.job_link_id IS NULL OR COALESCE(jl.is_available, 1) = 1)
-        AND NOT EXISTS (
-          SELECT 1 FROM job_applications prev
-          WHERE prev.profile_id = a.profile_id
-            AND prev.id <> a.id
-            AND COALESCE(prev.status, '') = 'applied'
-            AND LOWER(TRIM(COALESCE(prev.company_name, ''))) = LOWER(TRIM(COALESCE(a.company_name, '')))
-            AND TRIM(COALESCE(a.company_name, '')) <> ''
-        )
       ORDER BY a.created_at ASC, a.id ASC
       LIMIT ?
     `, params);
 
+        const profileIds = [...new Set(rows.map((r) => Number(r.profile_id)).filter(Boolean))];
+        const priorsByProfileId = new Map();
+        if (profileIds.length) {
+            const priorRows = getAll(`
+                SELECT prev.id, prev.profile_id, prev.company_name, prev.job_role,
+                       prev.job_description, prev.core_skills, prev.status,
+                       prev.updated_at, prev.created_at,
+                       jl.techstack AS link_techstack,
+                       (
+                         SELECT bc.applied_at FROM bid_courses bc
+                          WHERE bc.application_id = prev.id
+                          ORDER BY bc.id DESC LIMIT 1
+                       ) AS applied_at
+                  FROM job_applications prev
+                  LEFT JOIN job_links jl ON jl.id = prev.job_link_id
+                 WHERE prev.profile_id IN (${profileIds.map(() => '?').join(',')})
+                   AND COALESCE(prev.status, '') = 'applied'
+            `, profileIds);
+            for (const p of priorRows) {
+                const key = Number(p.profile_id);
+                if (!priorsByProfileId.has(key)) priorsByProfileId.set(key, []);
+                priorsByProfileId.get(key).push(p);
+            }
+        }
+
+        const { items: eligible, skipped } = filterEligibleReadyApps(rows, priorsByProfileId);
+        const limited = eligible.slice(0, limit);
+
         res.json({
-            items: rows.map((r) => {
+            items: limited.map((r) => {
                 let openUrl = r.job_url || null;
                 try {
                     const { canonicalizeGreenhouseApplyUrl, isGreenhouseUrl } = require('../services/scraper/greenhouseUrl');
@@ -3567,8 +3889,14 @@ router.get('/bidder/ready', (req, res) => {
                         openUrl = canonicalizeGreenhouseApplyUrl(openUrl) || openUrl;
                     }
                 } catch (_) { /* ignore */ }
+                const {
+                    job_description: _jd,
+                    core_skills: _cs,
+                    link_techstack: _ts,
+                    ...publicRow
+                } = r;
                 return {
-                    ...r,
+                    ...publicRow,
                     open_url: openUrl,
                     download_url: r.resume_filename
                         ? `/resumes/${encodeURIComponent(r.resume_filename)}`
@@ -3579,7 +3907,9 @@ router.get('/bidder/ready', (req, res) => {
                 job_link_ids: rawIds
                     ? rawIds.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n > 0)
                     : null,
-                admin: isAdmin
+                admin: isAdmin,
+                company_cooldown_days: COMPANY_COOLDOWN_DAYS,
+                skipped_eligibility: skipped.slice(0, 40)
             }
         });
     } catch (error) {
@@ -4085,15 +4415,71 @@ router.get('/outlook/status', (req, res) => {
     try {
         const config = {
             ...outlookMail.configStatus(),
-            ...mailForward.configStatus()
+            ...mailForward.configStatus(),
+            ...gmailImap.configStatus()
         };
         const accounts = outlookMail.listMailboxesPublic(req.user.id);
         const account = accounts[0] || null;
         const forward = mailForward.forwardPublic(mailForward.getForwardByUser(req.user.id));
-        res.json({ config, account, accounts, forward });
+        const gmail = gmailImap.listMailboxesPublic(req.user.id);
+        res.json({ config, account, accounts, forward, gmail });
     } catch (err) {
         console.error('Outlook status error:', err);
         res.status(500).json({ error: err.message || 'Failed to load Outlook status' });
+    }
+});
+
+// Free Gmail IMAP (App Password) — no paid inbound / Pub/Sub required
+router.post('/gmail/imap/connect', async (req, res) => {
+    try {
+        const mailbox = await gmailImap.connectMailbox(req.user.id, {
+            email: req.body?.email,
+            app_password: req.body?.app_password || req.body?.password,
+            host: req.body?.host
+        });
+        res.json({
+            mailbox,
+            gmail: gmailImap.listMailboxesPublic(req.user.id),
+            config: gmailImap.configStatus()
+        });
+    } catch (err) {
+        console.error('Gmail IMAP connect error:', err);
+        res.status(err.status || 400).json({ error: err.message || 'Gmail connect failed' });
+    }
+});
+
+router.post('/gmail/imap/sync', async (req, res) => {
+    try {
+        const mailboxId = parseInt(req.body?.mailbox_id, 10);
+        const result = mailboxId
+            ? await gmailImap.syncMailbox(mailboxId)
+            : await gmailImap.syncAllForUser(req.user.id);
+        res.json({ ...result, gmail: gmailImap.listMailboxesPublic(req.user.id) });
+    } catch (err) {
+        console.error('Gmail IMAP sync error:', err);
+        res.status(400).json({ error: err.message || 'Gmail sync failed' });
+    }
+});
+
+router.delete('/gmail/imap/mailboxes/:id', (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        res.json({
+            ...gmailImap.disconnectMailbox(req.user.id, id),
+            gmail: gmailImap.listMailboxesPublic(req.user.id)
+        });
+    } catch (err) {
+        console.error('Gmail IMAP disconnect error:', err);
+        res.status(400).json({ error: err.message || 'Disconnect failed' });
+    }
+});
+
+router.delete('/gmail/imap', (req, res) => {
+    try {
+        res.json(gmailImap.disconnectAll(req.user.id));
+    } catch (err) {
+        console.error('Gmail IMAP disconnect-all error:', err);
+        res.status(400).json({ error: err.message || 'Disconnect failed' });
     }
 });
 

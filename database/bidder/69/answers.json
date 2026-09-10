@@ -1,0 +1,10 @@
+[
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Round Rock, TX, 78664",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

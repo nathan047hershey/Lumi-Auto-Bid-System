@@ -3,15 +3,18 @@ import {
     saveSettings,
     listProfiles,
     generateResume,
+    regenerateResume,
     generateAnswers,
     generateCoverLetter,
     techstacksToCoreSkills,
     inferCoreSkillsFromJd,
     resumeDownloadUrl,
     fetchResumeBase64,
+    buildUploadResumeFilename,
     listBidderReady,
     getBidderStatus,
     markApplicationApplied,
+    markJobLinkExpired,
     clearFalseApplicationSuccess,
     getBidderApplication,
     getBidderApplicationByJobUrl,
@@ -25,6 +28,13 @@ import {
     saveBidderFillLesson,
     upsertQuestionMemory
 } from './lib/api.js';
+import {
+    enqueuePendingCvRegen,
+    updatePendingCvRegen,
+    removePendingCvRegen,
+    listPendingCvRegen,
+    PENDING_CV_REGEN_CAP
+} from './lib/cvPendingRegen.js';
 import {
     BIDDER_DEFAULTS,
     acquireQueueLock,
@@ -78,6 +88,7 @@ import {
     detectCaptchaSolved
 } from './lib/captchaAssist.js';
 import { resolveBidderAts, detectAtsFromUrl, isAshbyJobDescriptionUrl, ashbyApplicationUrl } from './lib/atsDetect.js';
+import { analyzeJobClosedPage } from './lib/jobClosedPage.js';
 import {
     AUTOFILL_ENGINE,
     AUTOFILL_RETRY_PER_PAGE,
@@ -189,6 +200,198 @@ async function saveActiveJobSession(patch) {
 
 async function clearActiveJobSession() {
     await saveSettings({ activeJobSession: null });
+}
+
+/** Avoid overlapping regen workers. */
+let _cvRegenWorkerRunning = false;
+
+/**
+ * Park application for CV regenerate (max 5 pending). Drop oldest when over cap.
+ * Kicks background regen → quality re-check → auto rebid when pass.
+ */
+async function parkApplicationForCvRegen({
+    item,
+    app,
+    qa,
+    reason = 'cv_quality'
+} = {}) {
+    const applicationId = item?.id || app?.id;
+    if (!applicationId) return { ok: false };
+
+    const { entry, dropped } = await enqueuePendingCvRegen({
+        applicationId,
+        profileId: app?.profile_id || item?.profile_id,
+        jobLinkId: app?.job_link_id || item?.job_link_id,
+        company_name: app?.company_name || item?.company_name || '',
+        job_role: app?.job_role || item?.job_role || '',
+        job_url: app?.job_url || item?.open_url || item?.job_url || '',
+        job_description: app?.job_description || '',
+        reasons: qa?.hard_reasons || qa?.reasons || [reason]
+    });
+
+    for (const d of dropped) {
+        await logCourseEvent(d.applicationId, 'cv_regenerate_dropped', {
+            reason: 'pending_cap_5',
+            cap: PENDING_CV_REGEN_CAP,
+            company_name: d.company_name || null
+        }).catch(() => {});
+    }
+
+    await logCourseEvent(applicationId, 'cv_regenerate_pending', {
+        reason,
+        hard_reasons: qa?.hard_reasons || [],
+        quality: qa?.quality || null,
+        pending_count: (await listPendingCvRegen()).length,
+        cap: PENDING_CV_REGEN_CAP
+    }).catch(() => {});
+
+    // Fire-and-forget worker
+    processPendingCvRegenQueue().catch((err) => {
+        console.warn('[bidder] cv regen worker', err?.message || err);
+    });
+
+    return { ok: true, entry, dropped };
+}
+
+/**
+ * Drain pending CV regen jobs: regenerate → check quality → auto rebid if pass.
+ */
+async function processPendingCvRegenQueue() {
+    if (_cvRegenWorkerRunning) return;
+    _cvRegenWorkerRunning = true;
+    try {
+        // Loop while there is work (new parks may arrive while regenerating).
+        for (let guard = 0; guard < 12; guard++) {
+            const list = await listPendingCvRegen();
+            const next = list.find((e) => e.status === 'pending')
+                || list.find((e) => e.status === 'regenerating' && (Date.now() - Number(e.enqueuedAt || 0)) > 180000);
+            if (!next) break;
+
+            const appId = next.applicationId;
+            await updatePendingCvRegen(appId, { status: 'regenerating', startedAt: Date.now() });
+            await logCourseEvent(appId, 'cv_regenerate_needed', {
+                via: 'pending_queue',
+                reasons: next.reasons || []
+            }).catch(() => {});
+
+            let gen = null;
+            try {
+                const app = await getBidderApplication(appId).catch(() => null);
+                const jobDescription = next.job_description
+                    || app?.job_description
+                    || '';
+                if (!jobDescription) {
+                    throw new Error('missing_job_description');
+                }
+                gen = await Promise.race([
+                    regenerateResume({
+                        applicationId: appId,
+                        jobDescription,
+                        companyName: next.company_name || app?.company_name || '',
+                        jobRole: next.job_role || app?.job_role || '',
+                        jobUrl: next.job_url || app?.job_url || '',
+                        coreSkills: ''
+                    }),
+                    new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('CV regenerate timed out after 90s')), 90000);
+                    })
+                ]);
+            } catch (err) {
+                await updatePendingCvRegen(appId, {
+                    status: 'failed',
+                    error: err?.message || String(err)
+                });
+                await logCourseEvent(appId, 'cv_regenerate_failed', {
+                    via: 'pending_queue',
+                    error: err?.message || String(err)
+                }).catch(() => {});
+                await removePendingCvRegen(appId);
+                continue;
+            }
+
+            const draftHtml = gen?.draft_html || gen?.resume_html || '';
+            const resumeFilename = gen?.resume_filename || null;
+            const uploadFilename = gen?.upload_filename || gen?.resume_upload_filename || null;
+
+            await logCourseEvent(appId, 'cv_regenerated', {
+                via: 'pending_queue',
+                filename: resumeFilename,
+                upload_filename: uploadFilename,
+                quality_grade: gen?.quality_report?.grade || null
+            }).catch(() => {});
+
+            let qa = null;
+            try {
+                qa = await checkBidderCv({
+                    application_id: appId,
+                    draft_html: draftHtml,
+                    job_description: next.job_description || '',
+                    resume_filename: resumeFilename,
+                    upload_filename: uploadFilename
+                });
+            } catch (err) {
+                qa = { ok: false, blockSubmit: true, reasons: ['cv_check_failed'], hard_reasons: ['cv_check_failed'] };
+            }
+
+            if (qa?.blockSubmit || qa?.ok === false) {
+                await updatePendingCvRegen(appId, {
+                    status: 'failed',
+                    error: (qa?.hard_reasons || qa?.reasons || ['quality_failed']).join(',')
+                });
+                await logCourseEvent(appId, 'cv_presubmit_blocked', {
+                    via: 'pending_queue_after_regen',
+                    reasons: qa?.reasons || [],
+                    hard_reasons: qa?.hard_reasons || [],
+                    quality: qa?.quality || null
+                }).catch(() => {});
+                await removePendingCvRegen(appId);
+                await notify(
+                    'Bidder',
+                    `CV still failing after regen (#${appId}) — skipped rebid`
+                ).catch(() => {});
+                continue;
+            }
+
+            await updatePendingCvRegen(appId, { status: 'ready' });
+            await removePendingCvRegen(appId);
+            await logCourseEvent(appId, 'cv_check_ok', {
+                via: 'pending_queue_after_regen',
+                quality: qa?.quality || null
+            }).catch(() => {});
+            await notify(
+                'Bidder',
+                `CV passed (#${appId}) — auto rebid`
+            ).catch(() => {});
+
+            // Auto rebid this application when queue is idle.
+            try {
+                const st = await getQueueState();
+                if (st?.running) {
+                    // Append for drain after current Process finishes.
+                    const pendingRebids = Array.isArray(st.pendingRebidIds)
+                        ? st.pendingRebidIds
+                        : [];
+                    if (!pendingRebids.includes(appId)) {
+                        await setQueueState({
+                            pendingRebidIds: [...pendingRebids, appId]
+                        });
+                    }
+                } else {
+                    // Start a focused Process for this application only.
+                    processReadyQueue({
+                        applicationIds: [appId],
+                        jobLinkIds: next.jobLinkId ? [next.jobLinkId] : []
+                    }).catch((err) => {
+                        console.warn('[bidder] auto rebid failed', err?.message || err);
+                    });
+                }
+            } catch (err) {
+                console.warn('[bidder] auto rebid schedule failed', err?.message || err);
+            }
+        }
+    } finally {
+        _cvRegenWorkerRunning = false;
+    }
 }
 
 /**
@@ -809,7 +1012,10 @@ async function autofillAfterGenerate({
     const filename = result.resume_filename || result.resumeFilename;
     if (filename && phase !== 'answers') {
         try {
-            resumeFile = await fetchResumeBase64(settings.apiBaseUrl, filename, settings.token);
+            resumeFile = await fetchResumeBase64(settings.apiBaseUrl, filename, settings.token, {
+                profile,
+                uploadFilename: result.resume_upload_filename || result.upload_filename || null
+            });
         } catch (err) {
             console.warn('[bidder] resume download for upload failed', err);
         }
@@ -1373,7 +1579,9 @@ async function fillProfileOnTab(tabId, { profile, job }) {
         filename: null,
         base64: null,
         mimeType: null,
-        autoSubmit: false
+        autoSubmit: false,
+        skipQuestions: true,
+        profileOnly: true
     });
 
     const filled = fillResult.fillStats?.filled || 0;
@@ -2224,6 +2432,9 @@ async function processReadyQueue(opts = {}) {
         await saveSettings({ pendingFill: null });
     } catch (_) { /* ignore */ }
 
+    // Resume any parked CV regenerations (cap 5) while Process runs.
+    processPendingCvRegenQueue().catch(() => {});
+
     // MV3: early sendResponse (queued≥1) can let Chrome sleep the SW mid-queue.
     // Ping storage periodically so Process keeps running through Greenhouse fill.
     const keepAlive = setInterval(() => {
@@ -2232,12 +2443,15 @@ async function processReadyQueue(opts = {}) {
         } catch (_) { /* ignore */ }
     }, 4000);
 
+    let lockReleasedEarly = false;
+
     let prefs = await getBidderPrefs();
     if (
         opts.uploadCoverLetter != null
         || opts.stayInApp != null
         || opts.unattended != null
         || opts.captchaGraceSec != null
+        || opts.humanAssistWaitSec != null
         || opts.autoSubmit != null
         || opts.autoNext != null
         || opts.captchaHelper != null
@@ -2252,6 +2466,12 @@ async function processReadyQueue(opts = {}) {
         if (opts.autoSubmit != null) patch.bidderAutoSubmit = !!opts.autoSubmit;
         if (opts.autoNext != null) patch.bidderAutoNext = !!opts.autoNext;
         if (opts.captchaHelper != null) patch.bidderCaptchaHelper = !!opts.captchaHelper;
+        if (opts.humanAssistWaitSec != null && Number(opts.humanAssistWaitSec) >= 0) {
+            const sec = Math.min(600, Math.round(Number(opts.humanAssistWaitSec)));
+            patch.bidderHumanAssistWaitSec = sec;
+            patch.bidderCaptchaHelperWaitSec = sec;
+            patch.bidderCaptchaGraceSec = sec;
+        }
         if (opts.captchaHelperWaitSec != null && Number(opts.captchaHelperWaitSec) >= 0) {
             patch.bidderCaptchaHelperWaitSec = Number(opts.captchaHelperWaitSec);
         }
@@ -2275,6 +2495,11 @@ async function processReadyQueue(opts = {}) {
             autoSubmit: patch.bidderAutoSubmit ?? prefs.autoSubmit,
             autoNext: patch.bidderAutoNext ?? prefs.autoNext,
             captchaHelper: patch.bidderCaptchaHelper ?? prefs.captchaHelper,
+            humanAssistWaitMs: patch.bidderHumanAssistWaitSec != null
+                ? Math.round(Number(patch.bidderHumanAssistWaitSec) * 1000)
+                : (patch.bidderCaptchaHelperWaitSec != null
+                    ? Math.round(Number(patch.bidderCaptchaHelperWaitSec) * 1000)
+                    : prefs.humanAssistWaitMs),
             captchaGraceMs: patch.bidderCaptchaGraceSec != null
                 ? Math.round(Number(patch.bidderCaptchaGraceSec) * 1000)
                 : prefs.captchaGraceMs,
@@ -2291,6 +2516,10 @@ async function processReadyQueue(opts = {}) {
                 ? patch.bidderDisabledFillLessons
                 : prefs.disabledFillLessons
         });
+        if (prefs.humanAssistWaitMs != null) {
+            prefs.captchaGraceMs = prefs.humanAssistWaitMs;
+            prefs.captchaHelperWaitMs = prefs.humanAssistWaitMs;
+        }
     }
     // Stay on Job Links for Live monitor. Hands-free (unattended) must NOT force captchaFocus —
     // that path waits for helpers / CapSolver and continues the queue without you.
@@ -2320,6 +2549,7 @@ async function processReadyQueue(opts = {}) {
             jobLinkIds,
             applicationIds,
             stopRequested: false,
+            pauseRequested: false,
             nextClicked: false,
             queueStartedAt: Date.now()
         });
@@ -2393,11 +2623,14 @@ async function processReadyQueue(opts = {}) {
         let processed = 0;
         let skippedAts = 0; // legacy counter (LinkedIn-only skips logged as blocked_ats during fill)
         let lastOpenAt = 0;
+        const expiredJobLinkIds = new Set();
         const openTabs = new Map(); // tabId -> item
         // Greenhouse email OTP: keep these tabs open after queue (never leftover-close).
         const holdEmailOtpTabs = new Map(); // tabId -> { id, company_name, ... }
 
         for (let i = 0; i < items.length; i++) {
+            const pauseGate = await waitWhileBidderPaused();
+            if (pauseGate.stopped) break;
             const state = await getQueueState();
             if (state?.stopRequested) break;
 
@@ -2414,6 +2647,10 @@ async function processReadyQueue(opts = {}) {
                 }
                 const st2 = await getQueueState();
                 if (st2?.stopRequested) break;
+                if (st2?.pauseRequested) {
+                    const pg = await waitWhileBidderPaused();
+                    if (pg.stopped) break;
+                }
             }
 
             const gap = BIDDER_DEFAULTS.openGapMs - (Date.now() - lastOpenAt);
@@ -2422,6 +2659,13 @@ async function processReadyQueue(opts = {}) {
             }
 
             const item = items[i];
+            if (item.job_link_id && expiredJobLinkIds.has(Number(item.job_link_id))) {
+                await logCourseEvent(item.id, 'job_expired', {
+                    job_link_id: item.job_link_id,
+                    reason: 'same_job_link'
+                }).catch(() => {});
+                continue;
+            }
             const applyUrl = item.open_url || item.job_url || '';
             const itemAts = resolveBidderAts({
                 applyUrl,
@@ -2469,6 +2713,20 @@ async function processReadyQueue(opts = {}) {
             }).catch(() => {});
 
             try {
+            let siteSuccess = false;
+            const closedAtOpen = await probeJobClosed(opened.tabId);
+            if (closedAtOpen?.closed) {
+                if (item.job_link_id) expiredJobLinkIds.add(Number(item.job_link_id));
+                await finishExpiredJob({
+                    item,
+                    tabId: opened.tabId,
+                    openTabs,
+                    probe: closedAtOpen,
+                    url: applyUrl || opened.url || null
+                });
+                continue;
+            }
+
             // Wait for form. Prefer clicking Apply — never CAPTCHA-pause while Apply is still on the page.
             let formOk = false;
             let captchaHandoff = false;
@@ -2515,6 +2773,20 @@ async function processReadyQueue(opts = {}) {
                     if (revealedEarly?.clicked || revealedEarly?.applyFound) {
                         applyClickedOnce = applyClickedOnce || !!revealedEarly.clicked;
                         lastApplyMeta = revealedEarly;
+                    }
+                    const closedMidWait = await probeJobClosed(opened.tabId);
+                    if (closedMidWait?.closed) {
+                        if (item.job_link_id) expiredJobLinkIds.add(Number(item.job_link_id));
+                        await finishExpiredJob({
+                            item,
+                            tabId: opened.tabId,
+                            openTabs,
+                            probe: closedMidWait,
+                            url: applyUrl || opened.url || null
+                        });
+                        formOk = false;
+                        opened.expired = true;
+                        break;
                     }
                     const detect = await chrome.tabs.sendMessage(opened.tabId, { type: 'DETECT_APPLY_FORM' });
                     if (detect?.ok && detect.data?.ok) {
@@ -2585,6 +2857,8 @@ async function processReadyQueue(opts = {}) {
                 await new Promise((r) => setTimeout(r, 800));
             }
 
+            if (opened.expired) continue;
+
             // Unattended / user may have closed the apply tab — skip quietly.
             {
                 const alive = await chrome.tabs.get(opened.tabId).catch(() => null);
@@ -2631,10 +2905,16 @@ async function processReadyQueue(opts = {}) {
                     applicationId: item.id
                 }).catch(() => null);
                 if (stillApply?.applyFound || applyClickedOnce) {
+                    const waitMs = Math.max(
+                        0,
+                        Number(prefs.humanAssistWaitMs ?? prefs.captchaGraceMs ?? BIDDER_DEFAULTS.humanAssistWaitMs) || 0
+                    );
+                    const waitSec = Math.round(waitMs / 1000);
                     await logCourseEvent(item.id, 'needs_manual', {
                         reason: 'apply_gate',
                         applyClickedOnce,
                         applyLabel: stillApply?.applyLabel || lastApplyMeta?.applyLabel || null,
+                        humanAssistWaitMs: waitMs,
                         detail: 'Apply visible or clicked but form not ready — Open tab and click Apply / create account, then Resume'
                     });
                     await uploadScreenshot(item.id, 'live', opened.tabId, {
@@ -2646,18 +2926,98 @@ async function processReadyQueue(opts = {}) {
                         captchaTabId: opened.tabId,
                         captchaApplicationId: item.id,
                         captchaJobUrl: stillApply?.href || null,
+                        captchaSince: Date.now(),
+                        captchaAbandonRequested: false,
+                        captchaResolved: false,
                         lastStatusEvent: 'needs_manual',
                         lastStatusAt: Date.now(),
                         lastStatusMeta: { reason: 'apply_gate' }
                     }).catch(() => {});
                     await notify(
-                        'Bidder',
-                        `Apply gate — finish Apply / account on tab, then Resume (${item.company_name || item.id})`
+                        'Bidder — needs help',
+                        waitSec > 0
+                            ? `Apply gate — finish Apply / account, then Resume (~${waitSec}s or skip) (${item.company_name || item.id})`
+                            : `Apply gate — skipping (${item.company_name || item.id})`
                     );
-                    // Leave tab open for the human / next Resume — do not remove.
-                    continue;
+                    await playBidderSound(prefs.soundEnabled);
+                    if (waitMs <= 0) {
+                        await logCourseEvent(item.id, 'captcha_abandoned', {
+                            reason: 'apply_gate',
+                            skippedWait: true
+                        }).catch(() => {});
+                        try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
+                        openTabs.delete(opened.tabId);
+                        await setQueueState({
+                            status: 'running',
+                            captchaTabId: null,
+                            captchaApplicationId: null,
+                            captchaKind: null
+                        }).catch(() => {});
+                        continue;
+                    }
+                    const wait = await waitForCaptchaOrLoginCleared(opened.tabId, {
+                        applicationId: item.id,
+                        timeoutMs: waitMs
+                    }).catch(() => ({ cleared: false, timeout: true }));
+                    if (wait?.cleared) {
+                        await setQueueState({
+                            status: 'running',
+                            captchaTabId: null,
+                            captchaApplicationId: null,
+                            captchaKind: null
+                        }).catch(() => {});
+                        // Fall through — form may now be ready; re-detect on next loop iteration is hard.
+                        // Re-check form once; if still missing, skip.
+                        const formAfter = await ensureApplyFormVisible(opened.tabId, {
+                            profileEmail,
+                            applicationId: item.id
+                        }).catch(() => null);
+                        if (formAfter?.formReady || formAfter?.ok) {
+                            // continue fill path by not continuing — need formOk true.
+                            // Simplest: mark and re-process via continue with retry is complex.
+                            // Leave tab and skip to next if still no form fields.
+                        }
+                        const wallClear = await detectCaptchaOrLogin(opened.tabId).catch(() => ({}));
+                        if (!wallClear?.login && formAfter) {
+                            // Try one more form detect
+                            const detect = await sendTabMessage(opened.tabId, { type: 'DETECT_APPLY_FORM' }).catch(() => null);
+                            if (detect?.ok && detect?.data?.ok) {
+                                formOk = true;
+                            }
+                        }
+                        if (!formOk) {
+                            await logCourseEvent(item.id, 'captcha_abandoned', {
+                                reason: 'apply_gate_resume_no_form',
+                                via: wait?.via || 'manual_resume'
+                            }).catch(() => {});
+                            await notify('Bidder — skipped', `Apply gate still incomplete — skip ${item.company_name || item.id}`);
+                            try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
+                            openTabs.delete(opened.tabId);
+                            continue;
+                        }
+                    } else {
+                        await logCourseEvent(item.id, 'captcha_abandoned', {
+                            reason: 'apply_gate',
+                            timeout: !!wait?.timeout,
+                            abandoned: !!wait?.abandoned,
+                            via: wait?.via || 'timeout'
+                        }).catch(() => {});
+                        await notify(
+                            'Bidder — skipped',
+                            `No response on Apply gate — skip ${item.company_name || item.id}`
+                        );
+                        try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
+                        openTabs.delete(opened.tabId);
+                        await setQueueState({
+                            status: 'running',
+                            captchaTabId: null,
+                            captchaApplicationId: null,
+                            captchaKind: null
+                        }).catch(() => {});
+                        continue;
+                    }
                 }
-                if (isBlockingCaptchaWall(wall, { formReady: false }) || captchaHandoff) {
+                if (!formOk && (isBlockingCaptchaWall(wall, { formReady: false }) || captchaHandoff)) {
                     // Attended: leave tab open for human. Unattended: tab already closed.
                     if (!prefs.unattended) {
                         // Tab left open for human; do not close
@@ -2667,11 +3027,13 @@ async function processReadyQueue(opts = {}) {
                     }
                     continue;
                 }
-                await logCourseEvent(item.id, 'no_form', {});
-                await notify('Bidder', `No form in ${Math.round(formWaitMs / 1000)}s — skip ${item.company_name || item.id}`);
-                try { await chrome.tabs.remove(opened.tabId); } catch (_) {}
-                openTabs.delete(opened.tabId);
-                continue;
+                if (!formOk) {
+                    await logCourseEvent(item.id, 'no_form', {});
+                    await notify('Bidder', `No form in ${Math.round(formWaitMs / 1000)}s — skip ${item.company_name || item.id}`);
+                    try { await chrome.tabs.remove(opened.tabId); } catch (_) {}
+                    openTabs.delete(opened.tabId);
+                    continue;
+                }
             }
 
             // Greenhouse JD sits above the form — click Apply + scroll before capture/fill.
@@ -2833,21 +3195,28 @@ async function processReadyQueue(opts = {}) {
             }
 
             if (fillErr) {
+                const parkedRegen = /cv_regen_pending/i.test(String(fillErr?.message || ''))
+                    || fillErr?.code === 'cv_regen_pending';
                 // bid_budget_exceeded already logged — avoid a second FAILED event.
-                if (!/bid_time_budget|bid_budget/i.test(String(fillErr?.message || ''))) {
+                if (!parkedRegen && !/bid_time_budget|bid_budget/i.test(String(fillErr?.message || ''))) {
                     await logCourseEvent(item.id, 'fill_failed', { error: fillErr?.message });
                 }
-                await setAppRunState(item.id, 'failed', {
+                await setAppRunState(item.id, parkedRegen ? 'incomplete' : 'failed', {
                     tabId: opened.tabId,
-                    eventType: 'run_failed'
+                    eventType: parkedRegen ? 'run_incomplete' : 'run_failed'
                 }).catch(() => {});
-                await notify('Bidder', /bid_time_budget|bid_budget/i.test(String(fillErr?.message || ''))
-                    ? `Time limit (~${Math.round(bidLimitMs / 1000)}s) — next job`
-                    : `Fill failed: ${fillErr.message}`);
+                await notify(
+                    'Bidder',
+                    parkedRegen
+                        ? 'CV regenerating (pending) — will auto-rebid when it passes'
+                        : (/bid_time_budget|bid_budget/i.test(String(fillErr?.message || ''))
+                            ? `Time limit (~${Math.round(bidLimitMs / 1000)}s) — next job`
+                            : `Fill failed: ${fillErr.message}`)
+                );
                 await playBidderSound(prefs.soundEnabled);
                 if (
                     prefs.unattended
-                    && /captcha/i.test(String(fillErr?.message || ''))
+                    && (/captcha/i.test(String(fillErr?.message || '')) || parkedRegen)
                 ) {
                     try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
                     openTabs.delete(opened.tabId);
@@ -2886,13 +3255,51 @@ async function processReadyQueue(opts = {}) {
                     tabId: opened.tabId,
                     eventType: 'run_submitting'
                 }).catch(() => {});
+                const resumeBlocksSubmit = !!(
+                    fillStats?.resumeRequired
+                    && (
+                        Number(fillStats?.uploadedResume || fillStats?.uploaded || 0) < 1
+                        || fillStats?.resumeNameOk === false
+                        || fillStats?.resumeCheck?.ok === false
+                    )
+                );
                 // Always try Submit when auto-submit is on. Greenhouse's enabled
                 // "Submit application" button is the source of truth — our collector
                 // often false-flags React EE selects as empty and used to skip the click.
+                // Never force-click when a required résumé is still empty or named badly.
+                if (resumeBlocksSubmit) {
+                    const badName = fillStats?.resumeNameOk === false
+                        || /resume_name/i.test(String(fillStats?.reason || ''));
+                    await logCourseEvent(item.id, 'submit_blocked_incomplete', {
+                        filled: fillStats?.filled || 0,
+                        requiredOk: fillStats?.requiredOk,
+                        requiredTotal: fillStats?.requiredTotal,
+                        missing: fillStats?.missingRequired
+                            || (badName ? ['CV name'] : ['Résumé']),
+                        reason: badName ? 'resume_name_invalid' : 'resume_required',
+                        resumeFilename: fillStats?.resumeFilename || '',
+                        incomplete: true
+                    });
+                    await setAppRunState(item.id, 'incomplete', {
+                        tabId: opened.tabId,
+                        missingRequired: fillStats.missingRequired
+                            || (badName ? ['CV name'] : ['Résumé']),
+                        requiredOk: fillStats.requiredOk,
+                        requiredTotal: fillStats.requiredTotal,
+                        eventType: 'run_incomplete'
+                    }).catch(() => {});
+                    await notify(
+                        'Bidder',
+                        badName
+                            ? `CV name invalid (${fillStats?.resumeFilename || 'messy'}) — Submit blocked`
+                            : 'Résumé not uploaded — Submit blocked; tab left open'
+                    );
+                    await playBidderSound(prefs.soundEnabled);
+                } else {
                 try {
                     const sub = await sendTabMessage(opened.tabId, {
                         type: 'BIDDER_ENGINE_SUBMIT',
-                        force: !!fillIncomplete
+                        force: !!fillIncomplete && !resumeBlocksSubmit
                     });
                     if (sub?.clicked) {
                         submitted = true;
@@ -2921,11 +3328,69 @@ async function processReadyQueue(opts = {}) {
                             requiredTotal: fillStats.requiredTotal,
                             eventType: 'run_incomplete'
                         }).catch(() => {});
+                        const waitMs = Math.max(
+                            0,
+                            Number(prefs.humanAssistWaitMs ?? prefs.captchaGraceMs ?? BIDDER_DEFAULTS.humanAssistWaitMs) || 0
+                        );
+                        const waitSec = Math.round(waitMs / 1000);
                         await notify(
-                            'Bidder',
-                            `Incomplete fill (${fillStats?.requiredOk ?? '?'}/${fillStats?.requiredTotal ?? '?'} required) — tab left open`
+                            'Bidder — needs help',
+                            waitSec > 0
+                                ? `Incomplete fill (${fillStats?.requiredOk ?? '?'}/${fillStats?.requiredTotal ?? '?'}) — Resume within ~${waitSec}s or skip`
+                                : `Incomplete fill — skipping`
                         );
                         await playBidderSound(prefs.soundEnabled);
+                        if (prefs.autoNext || prefs.unattended) {
+                            await setQueueState({
+                                status: 'awaiting_captcha',
+                                captchaTabId: opened.tabId,
+                                captchaApplicationId: item.id,
+                                captchaKind: 'manual',
+                                captchaSince: Date.now(),
+                                captchaResolved: false,
+                                captchaAbandonRequested: false
+                            }).catch(() => {});
+                            const wait = waitMs > 0
+                                ? await waitForCaptchaOrLoginCleared(opened.tabId, {
+                                    applicationId: item.id,
+                                    timeoutMs: waitMs
+                                }).catch(() => ({ cleared: false, timeout: true }))
+                                : { cleared: false, skippedWait: true };
+                            if (wait?.cleared) {
+                                await setQueueState({
+                                    status: 'running',
+                                    captchaTabId: null,
+                                    captchaApplicationId: null,
+                                    captchaKind: null
+                                }).catch(() => {});
+                                // User finished manually — try detect success; otherwise leave tab and continue queue.
+                                const okNow = await detectSubmitSuccess(opened.tabId).catch(() => false);
+                                if (okNow) {
+                                    try { await markApplicationApplied(item.id); } catch (_) { /* ignore */ }
+                                    await logCourseEvent(item.id, 'marked_applied', { via: 'manual_after_incomplete' }).catch(() => {});
+                                    try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
+                                    openTabs.delete(opened.tabId);
+                                } else {
+                                    openTabs.delete(opened.tabId);
+                                }
+                                continue;
+                            }
+                            await logCourseEvent(item.id, 'captcha_abandoned', {
+                                reason: 'fill_incomplete',
+                                timeout: !!wait?.timeout,
+                                via: wait?.via || 'timeout'
+                            }).catch(() => {});
+                            await notify('Bidder — skipped', `No response on incomplete form — skip ${item.company_name || item.id}`);
+                            try { await chrome.tabs.remove(opened.tabId); } catch (_) { /* ignore */ }
+                            openTabs.delete(opened.tabId);
+                            await setQueueState({
+                                status: 'running',
+                                captchaTabId: null,
+                                captchaApplicationId: null,
+                                captchaKind: null
+                            }).catch(() => {});
+                            continue;
+                        }
                     } else {
                         // Fallback: Mode-1 CLICK_SUBMIT (fill.js) if bidder engine missed the button.
                         const sub2 = await sendTabMessage(opened.tabId, { type: 'CLICK_SUBMIT' }).catch(() => null);
@@ -2948,6 +3413,7 @@ async function processReadyQueue(opts = {}) {
                         filled: fillStats?.filled || 0,
                         error: err?.message || String(err)
                     });
+                }
                 }
             }
             if (submitted) {
@@ -3165,7 +3631,15 @@ async function processReadyQueue(opts = {}) {
                 const ok = !!poll.ok;
                 if (ok || prefs.autoSubmit) {
                     if (ok) {
-                        await markApplicationApplied(item.id);
+                        siteSuccess = true;
+                        try {
+                            await markApplicationApplied(item.id);
+                        } catch (markErr) {
+                            console.warn(
+                                '[bidder] mark applied failed after site thank-you',
+                                markErr?.message || markErr
+                            );
+                        }
                         await logCourseEvent(item.id, 'marked_applied', {
                             via: 'success_text',
                             pollAttempts: poll.attempts,
@@ -3275,7 +3749,34 @@ async function processReadyQueue(opts = {}) {
             if (!fillStats?.submitClicked) processed += 1;
             } catch (itemErr) {
                 if (itemErr?.status === 401 || itemErr?.authExpired) throw itemErr;
+                if (itemErr?.jobExpired || /job_expired/i.test(String(itemErr?.message || ''))) {
+                    if (item.job_link_id) expiredJobLinkIds.add(Number(item.job_link_id));
+                    await finishExpiredJob({
+                        item,
+                        tabId: opened?.tabId || itemErr?.tabId || null,
+                        openTabs,
+                        probe: itemErr?.probe || null,
+                        url: applyUrl || opened?.url || null
+                    });
+                    continue;
+                }
                 const msg = String(itemErr?.message || itemErr || '');
+                const accessDenied = /application not found or access denied/i.test(msg);
+                if (siteSuccess || accessDenied) {
+                    let thankYou = siteSuccess;
+                    if (!thankYou && opened?.tabId) {
+                        const late = await detectSubmitSuccess(opened.tabId).catch(() => null);
+                        thankYou = !!late?.ok;
+                    }
+                    if (thankYou) {
+                        await logCourseEvent(item.id, 'marked_applied', {
+                            via: 'success_after_api_error',
+                            error: msg
+                        }).catch(() => {});
+                        if (opened?.tabId) openTabs.delete(opened.tabId);
+                        continue;
+                    }
+                }
                 if (opened?.tabId) openTabs.delete(opened.tabId);
                 await logCourseEvent(item.id, 'item_aborted', { error: msg }).catch(() => {});
                 if (/Tab closed|bid_time_budget/i.test(msg)) {
@@ -3336,6 +3837,39 @@ async function processReadyQueue(opts = {}) {
                 ? `Queue finished — processed ${processed}, skipped ${skippedAts} unsupported`
                 : `Queue finished — processed ${processed}`);
         await notify('Bidder', doneMsg);
+
+        // Drain any CVs that finished regenerating while this Process was running.
+        try {
+            const stEnd = await getQueueState();
+            const rebidIds = Array.isArray(stEnd?.pendingRebidIds)
+                ? stEnd.pendingRebidIds.map((id) => parseInt(id, 10)).filter((n) => Number.isInteger(n) && n > 0)
+                : [];
+            if (rebidIds.length && otpHoldCount === 0) {
+                await setQueueState({ pendingRebidIds: [] });
+                // Release lock first so nested Process can acquire it.
+                clearInterval(keepAlive);
+                await releaseAllPageDebuggers().catch(() => {});
+                await releaseQueueLock();
+                lockReleasedEarly = true;
+                processReadyQueue({ applicationIds: rebidIds }).catch((err) => {
+                    console.warn('[bidder] drain rebid failed', err?.message || err);
+                });
+                return {
+                    ok: true,
+                    processed,
+                    queued: items.length,
+                    skippedAts,
+                    awaitingEmailOtp: otpHoldCount,
+                    rebidQueued: rebidIds.length
+                };
+            }
+        } catch (err) {
+            console.warn('[bidder] rebid drain skipped', err?.message || err);
+        }
+
+        // Keep regenerating any parked CVs after Process ends.
+        processPendingCvRegenQueue().catch(() => {});
+
         return { ok: true, processed, queued: items.length, skippedAts, awaitingEmailOtp: otpHoldCount };
     } catch (err) {
         console.warn('[bidder] processReadyQueue failed', err);
@@ -3348,7 +3882,26 @@ async function processReadyQueue(opts = {}) {
     } finally {
         clearInterval(keepAlive);
         await releaseAllPageDebuggers().catch(() => {});
-        await releaseQueueLock();
+        if (!lockReleasedEarly) {
+            await releaseQueueLock();
+        }
+    }
+}
+
+async function waitWhileBidderPaused() {
+    while (true) {
+        const st = await getQueueState();
+        if (st?.stopRequested) return { stopped: true };
+        if (!st?.pauseRequested) {
+            if (String(st?.status || '') === 'paused' && st?.running) {
+                await setQueueState({ status: 'running' }).catch(() => {});
+            }
+            return { stopped: false };
+        }
+        if (String(st?.status || '') !== 'paused') {
+            await setQueueState({ status: 'paused' }).catch(() => {});
+        }
+        await new Promise((r) => setTimeout(r, 400));
     }
 }
 
@@ -3357,10 +3910,15 @@ async function waitForBidderNext(timeoutMs = 60 * 60 * 1000) {
     while (Date.now() - start < timeoutMs) {
         const st = await getQueueState();
         if (st?.nextClicked) {
-            await setQueueState({ nextClicked: false, status: 'running' });
+            await setQueueState({ nextClicked: false, status: 'running', pauseRequested: false });
             return;
         }
         if (st?.stopRequested) return;
+        if (st?.pauseRequested) {
+            const pg = await waitWhileBidderPaused();
+            if (pg.stopped) return;
+            continue;
+        }
         await new Promise((r) => setTimeout(r, 400));
     }
 }
@@ -3419,37 +3977,48 @@ async function runCaptchaPassEngine({
         login: !!wall?.login,
         captchaHelper: captchaHelper || !!solverProvider
     });
-    const baseGrace = Math.max(0, Number(prefs?.captchaGraceMs ?? BIDDER_DEFAULTS.captchaGraceMs) || 0);
+    const baseGrace = Math.max(
+        0,
+        Number(prefs?.humanAssistWaitMs ?? prefs?.captchaGraceMs ?? BIDDER_DEFAULTS.humanAssistWaitMs) || 0
+    );
     const helperWait = Math.max(
         0,
-        Number(prefs?.captchaHelperWaitMs ?? BIDDER_DEFAULTS.captchaHelperWaitMs) || 0
+        Number(prefs?.humanAssistWaitMs ?? prefs?.captchaHelperWaitMs ?? BIDDER_DEFAULTS.captchaHelperWaitMs) || 0
     );
-    // Vendor-aware wait:
-    // - Built-in solver or helper ON: long window
-    // - Helper OFF + AFK: short grace then skip
-    // - Attended without helper: up to captchaTimeoutMs for human
-    // Attended + helper: wait for helpers (~helperWait), not a full hour hold that
-    // starves fill when Greenhouse still shows a passive reCAPTCHA badge.
-    // Human Resume still works anytime; real walls without form keep polling.
-    let graceMs;
-    if (!unattended) {
-        graceMs = (captchaHelper || solverProvider)
-            ? Math.max(helperWait, 120 * 1000)
-            : BIDDER_DEFAULTS.captchaTimeoutMs;
-    } else if ((captchaHelper || solverProvider) && wall?.captcha) {
-        // Free helpers: use helperWait (default 90s), not a forced 5-minute stall
-        graceMs = Math.max(baseGrace, helperWait, strategy.unattendedWaitMs || 0);
-    } else if (strategy.helperUseful) {
-        graceMs = Math.max(baseGrace, strategy.unattendedWaitMs || baseGrace);
-    } else {
-        graceMs = Math.min(baseGrace, strategy.unattendedWaitMs || 25000);
-    }
+    // Settings "Human help wait": notify → wait → skip if no Resume / solve.
+    const graceMs = Math.max(baseGrace, helperWait);
     const helperUseful = (!!captchaHelper || !!solverProvider) && !!wall?.captcha;
     // AFK CAPTCHA pass: keep apply tab focused the entire wait (helpers / inject need it).
     const holdApplyForHelpers = helperUseful;
-    const shouldWait = unattended ? graceMs > 0 : true;
+    const shouldWait = graceMs > 0;
     // Re-nudge NopeCHA/Buster more often on free path (no paid solver)
     const HELPER_REASSIST_MS = solverProvider ? 15000 : 8000;
+
+    const alreadyThankYou = await detectSubmitSuccess(tabId).catch(() => false);
+    if (alreadyThankYou || wall?.thankYou) {
+        if (applicationId) {
+            await logCourseEvent(applicationId, 'submit_success_detected', {
+                via: 'thank_you_before_captcha',
+                phase,
+                engine: 'captcha-pass-v9'
+            }).catch(() => {});
+            try { await markApplicationApplied(applicationId); } catch (_) { /* ignore */ }
+            await logCourseEvent(applicationId, 'marked_applied', {
+                via: 'thank_you_before_captcha',
+                phase
+            }).catch(() => {});
+        }
+        await setQueueState({
+            status: 'running',
+            lastStatusEvent: 'marked_applied',
+            lastStatusAt: Date.now(),
+            captchaKind: null,
+            captchaTabId: null,
+            captchaApplicationId: null,
+            captchaUnattended: null
+        }).catch(() => {});
+        return { cleared: true, via: 'submit_success', thankYou: true, kind };
+    }
 
     await logCourseEvent(applicationId, kind, {
         ...wall,
@@ -3677,17 +4246,9 @@ async function runCaptchaPassEngine({
     const vendorName = vendorLabel(vendor);
     await notify(
         wall?.captcha ? `Bidder — ${vendorName}` : 'Bidder — Login required',
-        unattended
-            ? (solverProvider
-                ? `${companyLabel}: solving CAPTCHA via ${solverProvider} (built-in API)…`
-                : (helperUseful
-                    ? `${companyLabel}: AFK CAPTCHA — tab held ~${graceSec}s for NopeCHA/Buster.`
-                    : `${companyLabel}: ${strategy.label}. Skipping in ~${graceSec}s (AFK, no helper).`))
-            : (helperUseful || solverProvider
-                ? `${companyLabel}: ${strategy.label}. Apply tab held for ${solverProvider || 'NopeCHA/Buster'} (~${graceSec}s); Resume if needed.`
-                : (stayInApp
-                    ? `${companyLabel}: ${strategy.label}. Solve in background tab, then Resume.`
-                    : `${companyLabel}: ${strategy.label}. Solve in this tab, then Resume.`))
+        graceSec > 0
+            ? `${companyLabel}: needs help — waiting ~${graceSec}s for Resume / CAPTCHA; then skip.`
+            : `${companyLabel}: needs help — skipping now (wait = 0).`
     );
     await playBidderSound(prefs?.soundEnabled);
 
@@ -3723,7 +4284,7 @@ async function runCaptchaPassEngine({
         await logCourseEvent(applicationId, 'captcha_abandoned', {
             ...extra,
             phase,
-            unattended: true,
+            unattended,
             captchaHelper,
             graceMs,
             assist,
@@ -3742,20 +4303,22 @@ async function runCaptchaPassEngine({
             captchaUnattended: null,
             captchaHelper: null,
             captchaHoldApply: null,
-            captchaJobUrl: null,
             captchaTabMissing: false,
-            captchaAbandonRequested: false
-        });
+            captchaAbandonRequested: false,
+            captchaResolved: false,
+            lastStatusEvent: 'captcha_abandoned',
+            lastStatusAt: Date.now()
+        }).catch(() => {});
         await notify(
-            'Bidder — CAPTCHA parked',
+            'Bidder — skipped',
             captchaHelper
-                ? `${companyLabel}: helper did not clear in time — apply tab left open; queue continues.`
-                : `${companyLabel}: marked for later. Queue keeps applying other jobs.`
+                ? `${companyLabel}: no response in time — apply tab left open; queue continues.`
+                : `${companyLabel}: no response in time — skipped; queue continues.`
         );
         return {
             cleared: false,
             abandoned: true,
-            unattended: true,
+            unattended,
             captchaHelper,
             tabKept: !!captchaHelper,
             skippedWait: !!extra.skippedWait,
@@ -3766,8 +4329,7 @@ async function runCaptchaPassEngine({
     };
 
     if (!shouldWait) {
-        if (unattended) return abandonUnattended({ skippedWait: true });
-        return { cleared: false, skippedWait: true, kind };
+        return abandonUnattended({ skippedWait: true });
     }
 
     // Live frames on status change only (≤0.5s) — no CAPTCHA interval spam.
@@ -3806,25 +4368,48 @@ async function runCaptchaPassEngine({
                 pollMs
             });
             if (wait.cleared) {
-                await logCourseEvent(applicationId, 'captcha_cleared', {
-                    ...wait,
-                    phase,
-                    unattended,
-                    captchaHelper,
-                    engine: 'captcha-pass-v9'
-                });
+                const thankYou = wait.via === 'submit_success' || wait.thankYou;
+                if (thankYou && applicationId) {
+                    await logCourseEvent(applicationId, 'submit_success_detected', {
+                        via: 'thank_you_during_captcha',
+                        phase,
+                        engine: 'captcha-pass-v9'
+                    }).catch(() => {});
+                    try { await markApplicationApplied(applicationId); } catch (_) { /* ignore */ }
+                    await logCourseEvent(applicationId, 'marked_applied', {
+                        via: 'thank_you_during_captcha',
+                        phase
+                    }).catch(() => {});
+                } else {
+                    await logCourseEvent(applicationId, 'captcha_cleared', {
+                        ...wait,
+                        phase,
+                        unattended,
+                        captchaHelper,
+                        engine: 'captcha-pass-v9'
+                    });
+                }
                 const st = await getQueueState();
                 const clearedTid = st?.captchaTabId || tabId;
-                await uploadScreenshot(applicationId, 'captcha_cleared', clearedTid, {
-                    settleMs: 600,
-                    stayInApp
-                }).catch(() => {});
-                await notify('Bidder', captchaHelper
-                    ? 'Challenge cleared (NopeCHA/Buster) — continuing AFK fill'
-                    : 'Challenge cleared — continuing fill');
+                await uploadScreenshot(
+                    applicationId,
+                    thankYou ? 'after_submit' : 'captcha_cleared',
+                    clearedTid,
+                    { settleMs: 600, stayInApp }
+                ).catch(() => {});
+                await notify(
+                    thankYou ? 'Lumi' : 'Bidder',
+                    thankYou
+                        ? 'SUCCESS — thank-you'
+                        : (captchaHelper
+                            ? 'Challenge cleared (NopeCHA/Buster) — continuing AFK fill'
+                            : 'Challenge cleared — continuing fill')
+                );
                 try { await chrome.storage.session.remove('captchaUserFocusHoldUntil'); } catch (_) { /* ignore */ }
                 await setQueueState({
                     status: 'running',
+                    lastStatusEvent: thankYou ? 'marked_applied' : (st?.lastStatusEvent || 'captcha_cleared'),
+                    lastStatusAt: Date.now(),
                     captchaKind: null,
                     captchaTabId: null,
                     captchaApplicationId: null,
@@ -3844,14 +4429,10 @@ async function runCaptchaPassEngine({
                 return { ...wait, kind };
             }
             if (wait.tabClosed) {
-                if (unattended) return abandonUnattended(wait);
-                return { ...wait, kind };
+                return abandonUnattended(wait);
             }
         }
-        if (unattended) {
-            return abandonUnattended({ timeout: true });
-        }
-        return { cleared: false, timeout: true, kind };
+        return abandonUnattended({ timeout: true });
 }
 
 const APPLY_LESSONS_KEY = 'bidderApplyLessons';
@@ -4407,7 +4988,27 @@ async function prepareBidderApplicationFiles(tabId, item, app, prefs) {
     const resumeName = app.resume_filename || item.resume_filename;
     const settings = await getSettings();
     if (resumeName) {
-        resumeFile = await fetchResumeBase64(settings.apiBaseUrl, resumeName, settings.token).catch(() => null);
+        const profileHint = {
+            first_name: app.first_name || item.first_name || prefs?.first_name,
+            last_name: app.last_name || item.last_name || prefs?.last_name,
+            preferred_name: app.preferred_name || item.preferred_name
+        };
+        // Prefer names from cached profiles list when application payload lacks them.
+        if (!profileHint.first_name || !profileHint.last_name) {
+            try {
+                const profiles = await listProfiles(settings.apiBaseUrl, settings.token);
+                const pid = app.profile_id || item.profile_id || settings.selectedProfileId;
+                const p = (profiles || []).find((x) => String(x.id) === String(pid));
+                if (p) {
+                    profileHint.first_name = profileHint.first_name || p.first_name;
+                    profileHint.last_name = profileHint.last_name || p.last_name;
+                }
+            } catch (_) { /* ignore */ }
+        }
+        resumeFile = await fetchResumeBase64(settings.apiBaseUrl, resumeName, settings.token, {
+            profile: profileHint,
+            uploadFilename: app.resume_upload_filename || item.resume_upload_filename || null
+        }).catch(() => null);
     }
     const detect = await chrome.tabs.sendMessage(tabId, { type: 'DETECT_APPLY_FORM' }).catch(() => null);
     const formSnap = detect?.data?.form || { fileInputs: [] };
@@ -4451,6 +5052,7 @@ async function setAutofillPanelStatus(tabId, status, progress = null) {
 
 async function generateBidderAnswersForItem(item, app, questions, engineLabel, budgetMs = 50000) {
     if (!questions.length) return [];
+    const answersStartedAt = Date.now();
     // Never force a 20–25s AI wait when the bid wall-clock budget is nearly gone.
     const requested = Number(budgetMs);
     const ANSWERS_BUDGET_MS = Math.min(
@@ -4460,6 +5062,8 @@ async function generateBidderAnswersForItem(item, app, questions, engineLabel, b
     if (ANSWERS_BUDGET_MS < 8000) {
         await logCourseEvent(item.id, 'ai_skipped_budget', {
             fresh: questions.length,
+            questions: questions.length,
+            duration_ms: Date.now() - answersStartedAt,
             remainingMs: ANSWERS_BUDGET_MS,
             reason: 'answers_budget_too_low'
         }).catch(() => {});
@@ -4484,13 +5088,32 @@ async function generateBidderAnswersForItem(item, app, questions, engineLabel, b
             })
         ]);
         const answers = brain.answers || [];
-        await logCourseEvent(item.id, 'bidder_answers_ready', {
+        await logCourseEvent(item.id, brain.reused && !brain.generated_count
+            ? 'bidder_answers_reused'
+            : 'bidder_answers_ready', {
             engine: brain.engine_version || engineLabel,
             count: answers.length,
+            questions: questions.length,
+            duration_ms: Date.now() - answersStartedAt,
             memory_hits: brain.memory_hits || answers.filter((a) => a?.match_source === 'question_memory').length,
             studying: !!brain.studying,
+            reused: !!brain.reused,
+            reused_count: brain.reused_count || 0,
+            generated_count: brain.generated_count != null
+                ? brain.generated_count
+                : (brain.reused && brain.provider === 'cache' ? 0 : answers.length),
+            provider: brain.provider || null,
             meta: brain.bidder_meta || null
         });
+        // Persist immediately so skip / rebid can reuse without another LLM call.
+        if (answers.length) {
+            await savePackage(item.id, answers, {
+                reason: 'bidder_answers_ready',
+                count: answers.length,
+                reused: !!brain.reused,
+                provider: brain.provider || null
+            }).catch(() => {});
+        }
         // Persist Policy labels into question memory so the next bid studies them.
         try {
             for (const a of answers) {
@@ -4511,7 +5134,12 @@ async function generateBidderAnswersForItem(item, app, questions, engineLabel, b
         } catch (_) { /* ignore */ }
         return answers;
     } catch (err) {
-        await logCourseEvent(item.id, 'ai_failed', { error: err?.message, engine: engineLabel });
+        await logCourseEvent(item.id, 'ai_failed', {
+            error: err?.message,
+            engine: engineLabel,
+            questions: questions.length,
+            duration_ms: Date.now() - answersStartedAt
+        });
         await notify('Bidder', `AI answers failed — continuing profile fill: ${err?.message || err}`);
         return [];
     }
@@ -4711,12 +5339,16 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
         totalFilled += fillResp.fillStats?.filled || 0;
         totalUploaded += fillResp.uploadStats?.uploaded || 0;
         if (fillResp.fillStats && typeof fillResp.fillStats.requiredComplete === 'boolean') {
-            lastRequiredComplete = fillResp.fillStats.requiredComplete;
-            lastRequiredOk = fillResp.fillStats.requiredOk;
-            lastRequiredTotal = fillResp.fillStats.requiredTotal;
-            lastMissingRequired = Array.isArray(fillResp.fillStats.missingRequired)
-                ? fillResp.fillStats.missingRequired
-                : [];
+            const merged = normalizeFillStats({
+                ...fillResp.fillStats,
+                uploaded: fillResp.uploadStats?.uploaded,
+                uploadedResume: fillResp.uploadStats?.uploadedResume
+                    ?? fillResp.fillStats.uploadedResume
+            });
+            lastRequiredComplete = merged.requiredComplete;
+            lastRequiredOk = merged.requiredOk;
+            lastRequiredTotal = merged.requiredTotal;
+            lastMissingRequired = merged.missingRequired;
         }
 
         await uploadScreenshot(item.id, `autofill_page_${pages}_after`, tabId, shotOpts({ settleMs: 600 }))
@@ -4848,7 +5480,19 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
             requiredComplete: lastRequiredComplete,
             requiredOk: lastRequiredOk,
             requiredTotal: lastRequiredTotal,
-            missingRequired: lastMissingRequired
+            missingRequired: lastMissingRequired,
+            resumeRequired: lastFillResp?.fillStats?.resumeRequired,
+            uploadedResume: lastFillResp?.uploadStats?.uploadedResume
+                ?? lastFillResp?.fillStats?.uploadedResume,
+            uploaded: lastFillResp?.uploadStats?.uploaded,
+            resumeFilename: lastFillResp?.fillStats?.resumeFilename
+                || lastFillResp?.uploadStats?.resumeFilename
+                || lastFillResp?.resumeCheck?.filename,
+            resumeNameOk: lastFillResp?.fillStats?.resumeNameOk
+                ?? lastFillResp?.resumeCheck?.nameOk
+                ?? lastFillResp?.uploadStats?.resumeNameOk,
+            resumeOk: lastFillResp?.fillStats?.resumeOk ?? lastFillResp?.resumeCheck?.ok,
+            visibleRequiredErrors: lastFillResp?.fillStats?.visibleRequiredErrors
         });
         if (requiredBlocked) {
             await logCourseEvent(item.id, 'submit_blocked_incomplete', {
@@ -4860,6 +5504,59 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
                 missing: lastMissingRequired,
                 incomplete: true
             });
+        } else {
+        // Final CV gate before submit: file + clean name + content quality.
+        let cvPreSubmit = null;
+        try {
+            await setAutofillPanelStatus(tabId, 'Final CV quality check…', 88);
+            cvPreSubmit = await checkBidderCv({
+                application_id: item.id,
+                profile_id: app.profile_id || item.profile_id,
+                draft_html: app.draft_html || '',
+                job_description: app.job_description || '',
+                resume_filename: app.resume_filename || item.resume_filename,
+                upload_filename: lastFillResp?.uploadStats?.resumeFilename
+                    || lastFillResp?.fillStats?.resumeFilename
+                    || app.resume_upload_filename
+                    || item.resume_upload_filename
+                    || null
+            });
+            await logCourseEvent(item.id, cvPreSubmit?.ok ? 'cv_presubmit_ok' : 'cv_presubmit_blocked', {
+                reasons: cvPreSubmit?.reasons || [],
+                hard_reasons: cvPreSubmit?.hard_reasons || [],
+                quality: cvPreSubmit?.quality || null,
+                resumeFilename: lastFillResp?.fillStats?.resumeFilename
+                    || lastFillResp?.uploadStats?.resumeFilename
+                    || null
+            }).catch(() => {});
+        } catch (cvErr) {
+            console.warn('[bidder] pre-submit cv-check failed', cvErr?.message || cvErr);
+        }
+        if (cvPreSubmit && cvPreSubmit.blockSubmit) {
+            await parkApplicationForCvRegen({
+                item,
+                app,
+                qa: cvPreSubmit,
+                reason: 'cv_presubmit_quality'
+            });
+            await logCourseEvent(item.id, 'submit_blocked_incomplete', {
+                ats,
+                reason: 'cv_quality_blocked',
+                hard_reasons: cvPreSubmit.hard_reasons || [],
+                quality: cvPreSubmit.quality || null,
+                engine: AUTOFILL_ENGINE,
+                incomplete: true,
+                pending_regen: true
+            });
+            await notify(
+                'Bidder',
+                cvPreSubmit.quality?.summary
+                    ? `Submit blocked — ${cvPreSubmit.quality.summary}. Parked for regen + auto-rebid.`
+                    : `Submit blocked — CV issues. Parked for regen + auto-rebid.`
+            );
+            const err = new Error('cv_regen_pending');
+            err.code = 'cv_regen_pending';
+            throw err;
         } else {
         // Groq application checkout — block auto-submit when critical issues remain.
         let checkout = null;
@@ -4990,11 +5687,17 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
                 totalFilled += finalFill.fillStats?.filled || 0;
                 totalUploaded += finalFill.uploadStats?.uploaded || 0;
                 if (finalFill.fillStats && typeof finalFill.fillStats.requiredComplete === 'boolean') {
-                    lastRequiredComplete = finalFill.fillStats.requiredComplete;
-                    lastRequiredOk = finalFill.fillStats.requiredOk;
-                    lastRequiredTotal = finalFill.fillStats.requiredTotal;
-                    lastMissingRequired = Array.isArray(finalFill.fillStats.missingRequired)
-                        ? finalFill.fillStats.missingRequired
+                    const merged = normalizeFillStats({
+                        ...finalFill.fillStats,
+                        uploaded: finalFill.uploadStats?.uploaded,
+                        uploadedResume: finalFill.uploadStats?.uploadedResume
+                            ?? finalFill.fillStats.uploadedResume
+                    });
+                    lastRequiredComplete = merged.requiredComplete;
+                    lastRequiredOk = merged.requiredOk;
+                    lastRequiredTotal = merged.requiredTotal;
+                    lastMissingRequired = merged.missingRequired.length
+                        ? merged.missingRequired
                         : lastMissingRequired;
                 }
                 if (submitClicked) {
@@ -5012,6 +5715,7 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
             }
         }
         } // end checkout ok → submit
+        } // end cv pre-submit ok
         } // end !requiredBlocked
     }
 
@@ -5091,7 +5795,92 @@ async function runAutofillEngineOnTab(tabId, item, prefs, ctx) {
     };
 }
 
+async function probeJobClosed(tabId) {
+    try {
+        const form = await chrome.tabs.sendMessage(tabId, { type: 'DETECT_APPLY_FORM' });
+        if (form?.ok && form.data?.ok) {
+            return { closed: false, reason: 'form_present', count: form.data.count || 0 };
+        }
+    } catch (_) { /* scripts may not be ready */ }
+    try {
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'DETECT_JOB_CLOSED' });
+        if (res?.ok && res.data) return res.data;
+    } catch (_) { /* content script may not be ready */ }
+    try {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        const [inj] = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+                const formish = document.querySelectorAll(
+                    'input:not([type="hidden"]):not([type="submit"]), select, textarea'
+                ).length;
+                let httpStatus = 0;
+                try {
+                    const nav = performance.getEntriesByType('navigation')[0];
+                    if (nav && Number(nav.responseStatus) > 0) httpStatus = Number(nav.responseStatus);
+                } catch (_) { /* ignore */ }
+                return {
+                    text: (document.body?.innerText || '').slice(0, 1200),
+                    fieldCount: formish,
+                    headingText: Array.from(document.querySelectorAll('h1, h2'))
+                        .slice(0, 4)
+                        .map((el) => (el.innerText || '').trim())
+                        .filter(Boolean)
+                        .join('\n'),
+                    alertText: Array.from(document.querySelectorAll(
+                        '[role="alert"], .flash, .flash--error'
+                    )).map((el) => (el.innerText || '').trim()).filter(Boolean).join(' '),
+                    title: document.title || '',
+                    url: location.href || '',
+                    httpStatus
+                };
+            }
+        });
+        return analyzeJobClosedPage({
+            ...(inj?.result || {}),
+            url: inj?.result?.url || tab?.url || ''
+        }) || { closed: false };
+    } catch (_) {
+        return { closed: false };
+    }
+}
+
+async function finishExpiredJob({ item, tabId, openTabs, probe = null, url = null }) {
+    const info = probe || {};
+    await logCourseEvent(item.id, 'job_expired', {
+        job_link_id: item.job_link_id || null,
+        match: info.match || null,
+        snippet: info.snippet || null,
+        url: url || null
+    }).catch(() => {});
+    if (item.job_link_id) {
+        await markJobLinkExpired(item.job_link_id, {
+            snippet: info.snippet || null,
+            url: url || null
+        }).catch(() => {});
+    }
+    if (tabId) {
+        await setAutofillPanelStatus(tabId, 'Job expired — bid stopped', 100).catch(() => {});
+        await uploadScreenshot(item.id, 'live', tabId, {
+            settleMs: 200,
+            stayInApp: true
+        }).catch(() => {});
+        try { await chrome.tabs.remove(tabId); } catch (_) { /* ignore */ }
+    }
+    if (openTabs && tabId) openTabs.delete(tabId);
+    await notify('Bidder', `Job expired — stopped bid (${item.company_name || item.id})`).catch(() => {});
+    return true;
+}
+
 async function runBidderFillOnTabInner(tabId, item, prefs) {
+    const closedBeforeFill = await probeJobClosed(tabId);
+    if (closedBeforeFill?.closed) {
+        const err = new Error('job_expired');
+        err.jobExpired = true;
+        err.probe = closedBeforeFill;
+        err.tabId = tabId;
+        throw err;
+    }
     await ensureScripts(tabId);
     const payload = await getBidderApplication(item.id);
     const app = payload.application || {};
@@ -5173,7 +5962,10 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
                 profile: { ...profile, ...payload.profile },
                 answers: [],
                 autoSubmit: false,
-                skipFiles: true
+                skipFiles: true,
+                // Identity only — no heuristic essays that get overwritten by AI.
+                skipQuestions: true,
+                profileOnly: true
             }
         });
         await logCourseEvent(item.id, 'profile_fill_started', {
@@ -5185,49 +5977,56 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
         console.warn('[bidder] early profile fill', err);
     }
 
-    // CV quality gate — only block on missing resume file. Soft issues regenerate
-    // in the background so the form is not empty for minutes.
+    // CV quality gate — file, clean name, content quality.
+    // Missing file / critical content → regenerate and wait (60s).
+    // Soft keyword overlap alone still deferred to background.
     try {
-        await setAutofillPanelStatus(tabId, 'Checking CV…', 18);
+        await setAutofillPanelStatus(tabId, 'Checking CV quality…', 18);
         const qa = await checkBidderCv({
             application_id: item.id,
+            profile_id: app.profile_id || item.profile_id,
             draft_html: app.draft_html || '',
             job_description: app.job_description || '',
-            resume_filename: app.resume_filename || item.resume_filename
+            resume_filename: app.resume_filename || item.resume_filename,
+            upload_filename: app.resume_upload_filename || item.resume_upload_filename || null
         });
-        const mustHaveFile = Array.isArray(qa?.reasons) && qa.reasons.includes('missing_resume_file');
-        if (qa?.shouldRegenerate && mustHaveFile) {
-            await logCourseEvent(item.id, 'cv_regenerate_needed', qa);
-            await setAutofillPanelStatus(tabId, 'Generating CV (max 60s)…', 22);
-            await notify('Bidder', 'No resume on file — generating CV before uploads (60s max)');
-            try {
-                const gen = await Promise.race([
-                    generateResume({
-                        profileId: app.profile_id || item.profile_id,
-                        jobDescription: app.job_description || '',
-                        companyName: app.company_name || item.company_name || '',
-                        jobRole: app.job_role || item.job_role || '',
-                        jobUrl: app.job_url || item.open_url || '',
-                        coreSkills: ''
-                    }),
-                    new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('CV generate timed out after 60s')), 60000);
-                    })
-                ]);
-                if (gen?.resume_filename) {
-                    app.resume_filename = gen.resume_filename;
-                    app.draft_html = gen.draft_html || gen.resume_html || app.draft_html;
-                    await logCourseEvent(item.id, 'cv_regenerated', { filename: gen.resume_filename });
-                }
-            } catch (err) {
-                await logCourseEvent(item.id, 'cv_regenerate_failed', { error: err?.message });
-            }
+        await logCourseEvent(item.id, qa?.ok ? 'cv_check_ok' : 'cv_check_issues', {
+            reasons: qa?.reasons || [],
+            hard_reasons: qa?.hard_reasons || [],
+            quality: qa?.quality || null,
+            blockSubmit: !!qa?.blockSubmit
+        }).catch(() => {});
+
+        const hard = Array.isArray(qa?.hard_reasons) ? qa.hard_reasons : [];
+        const mustRegenNow = !!qa?.shouldRegenerate && (
+            hard.includes('missing_resume_file')
+            || hard.includes('draft_too_short')
+            || hard.includes('quality_critical')
+            || hard.includes('quality_score_low')
+        );
+
+        if (mustRegenNow) {
+            await parkApplicationForCvRegen({
+                item,
+                app,
+                qa,
+                reason: 'cv_quality_hard'
+            });
+            await setAutofillPanelStatus(tabId, 'CV pending regenerate — will auto-rebid when ready', 20);
+            await notify(
+                'Bidder',
+                qa?.quality?.summary
+                    ? `CV parked for regen (${qa.quality.grade || 'fail'}) — auto-rebid when pass`
+                    : 'CV parked for regenerate — auto-rebid when pass'
+            );
+            const err = new Error('cv_regen_pending');
+            err.code = 'cv_regen_pending';
+            throw err;
         } else if (qa?.shouldRegenerate) {
             await logCourseEvent(item.id, 'cv_regenerate_deferred', {
                 ...qa,
                 note: 'soft_quality_issue_fill_continues'
             });
-            // Fire-and-forget soft regen — do not block fill
             generateResume({
                 profileId: app.profile_id || item.profile_id,
                 jobDescription: app.job_description || '',
@@ -5244,6 +6043,9 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
             });
         }
     } catch (err) {
+        if (err?.code === 'cv_regen_pending' || /cv_regen_pending/i.test(String(err?.message || ''))) {
+            throw err;
+        }
         console.warn('[bidder] cv-check', err);
     }
 
@@ -5279,15 +6081,17 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
     }
 
     await ensureApplyFormVisible(tabId);
-    await logCourseEvent(item.id, 'answers_generating', {
-        ats,
-        engine: engineLabel,
-        questions: questions.length
-    });
+    if (questions.length) {
+        await logCourseEvent(item.id, 'answers_generating', {
+            ats,
+            engine: engineLabel,
+            questions: questions.length
+        });
+    }
     await setAutofillPanelStatus(
         tabId,
         questions.length
-            ? `Drafting ${questions.length} AI answer(s)… (profile already filling)`
+            ? `Drafting ${questions.length} AI answer(s)… (profile filling — questions wait)`
             : 'Preparing resume upload…',
         35
     );
@@ -5298,6 +6102,8 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
     if (questions.length && remainingForAi < 12000) {
         await logCourseEvent(item.id, 'ai_skipped_budget', {
             fresh: questions.length,
+            questions: questions.length,
+            duration_ms: 0,
             remainingMs: Math.max(0, bidDeadline - Date.now()),
             reason: 'pre_fill'
         }).catch(() => {});
@@ -5348,14 +6154,16 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
             questions: questions.length,
             parallel_answers: true
         });
-        // Profile + files while AI still runs.
+        // Profile + files while AI still runs (questions wait for answers).
         await sendTabMessage(tabId, {
             type: 'FILL_FORM',
             payload: {
                 ...filePayload,
                 profile: { ...profile, ...payload.profile },
                 answers: [],
-                autoSubmit: false
+                autoSubmit: false,
+                skipQuestions: true,
+                profileOnly: true
             }
         }).catch(() => null);
         uploadScreenshot(item.id, 'mid_fill', tabId, shotOpts({ settleMs: 200 })).catch(() => {});
@@ -5515,44 +6323,31 @@ async function runBidderFillOnTabInner(tabId, item, prefs) {
                         });
                         result.submitClicked = false;
                     } else if (!result.submitClicked) {
-                        const sub = await sendTabMessage(tabId, { type: 'BIDDER_ENGINE_SUBMIT', force: true });
+                        const sub = await sendTabMessage(tabId, { type: 'BIDDER_ENGINE_SUBMIT', force: false });
                         result.submitClicked = !!sub?.clicked;
                         await logCourseEvent(item.id, 'submit_clicked', sub || {});
                     }
                 } else if (!result.submitClicked) {
                     const sub = await sendTabMessage(tabId, {
                         type: 'BIDDER_ENGINE_SUBMIT',
-                        force: true
+                        force: false
                     });
                     result.submitClicked = !!sub?.clicked;
                     await logCourseEvent(item.id, 'submit_clicked', sub || {});
                 }
             } else if (prefs.autoSubmit && !result.requiredComplete) {
-                // Still try when Greenhouse enabled Submit — collector false-empties are common.
-                if (!result.submitClicked) {
-                    const sub = await sendTabMessage(tabId, {
-                        type: 'BIDDER_ENGINE_SUBMIT',
-                        force: true
-                    }).catch(() => null);
-                    if (sub?.clicked) {
-                        result.submitClicked = true;
-                        result.requiredComplete = true;
-                        await logCourseEvent(item.id, 'submit_clicked', {
-                            ...(sub || {}),
-                            via: 'force_despite_incomplete'
-                        });
-                    } else {
-                        await logCourseEvent(item.id, 'submit_blocked_incomplete', {
-                            missing: result.missingRequired || sub?.missing || [],
-                            requiredOk: result.requiredOk,
-                            requiredTotal: result.requiredTotal,
-                            incomplete: true,
-                            reason: 'required_fields_incomplete',
-                            siteReady: sub?.siteReady
-                        });
-                        await notify('Bidder', 'Required fields incomplete — Submit blocked; reported');
-                    }
-                }
+                // Never force-submit when required fields are empty (sponsorship, etc.).
+                await logCourseEvent(item.id, 'submit_blocked_incomplete', {
+                    missing: result.missingRequired || [],
+                    requiredOk: result.requiredOk,
+                    requiredTotal: result.requiredTotal,
+                    incomplete: true,
+                    reason: 'required_fields_incomplete'
+                });
+                await notify(
+                    'Bidder',
+                    `Submit blocked — ${(result.missingRequired || []).slice(0, 2).join(', ') || 'required fields'} still empty`
+                );
             }
         }
 
@@ -5921,6 +6716,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 'bidderCaptchaHelper',
                 'bidderCaptchaHelperWaitSec',
                 'bidderCaptchaGraceSec',
+                'bidderHumanAssistWaitSec',
                 'bidderAutoSubmit',
                 'bidderAutoNext',
                 'bidderCaptchaFocus',
@@ -5933,6 +6729,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             const patch = {};
             for (const key of allowed) {
                 if (prefs[key] !== undefined) patch[key] = prefs[key];
+            }
+            // Keep grace / helper in sync with unified human-assist wait.
+            if (patch.bidderHumanAssistWaitSec != null && Number(patch.bidderHumanAssistWaitSec) >= 0) {
+                const sec = Math.min(600, Math.round(Number(patch.bidderHumanAssistWaitSec)));
+                patch.bidderHumanAssistWaitSec = sec;
+                patch.bidderCaptchaHelperWaitSec = sec;
+                patch.bidderCaptchaGraceSec = sec;
             }
             if (!Object.keys(patch).length) {
                 return { ok: false, error: 'No prefs to save' };
@@ -6661,11 +7464,117 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                     missing_required: bidderSnap?.missingRequired || snap?.missingRequired || []
                 });
 
-                if (!interpreted?.ok && !interpreted?.fills?.length && !interpreted?.clickSubmit) {
+                if (!interpreted?.ok
+                    && !interpreted?.fills?.length
+                    && !interpreted?.clickSubmit
+                    && !interpreted?.queueControl
+                    && !interpreted?.reAutofill) {
                     sendResponse({
                         ok: false,
                         error: interpreted?.summary || interpreted?.error || 'Could not apply instruction',
                         summary: interpreted?.summary || null
+                    });
+                    return;
+                }
+
+                // Queue / control actions (pause, resume, stop, next, skip CAPTCHA)
+                const qc = String(interpreted.queueControl || '').toLowerCase();
+                if (qc === 'pause') {
+                    await setQueueState({ pauseRequested: true, status: 'paused' });
+                    await notify('Lumi', 'Paused — fix the form, then say Resume');
+                    await setQueueState({
+                        coachStatus: 'Paused — waiting for you',
+                        coachAt: Date.now()
+                    }).catch(() => {});
+                    sendResponse({
+                        ok: true,
+                        queueControl: 'pause',
+                        summary: interpreted.summary || 'Paused',
+                        tabId,
+                        applicationId: appId
+                    });
+                    return;
+                }
+                if (qc === 'resume') {
+                    await setQueueState({ pauseRequested: false, status: 'running' });
+                    await notify('Lumi', 'Resumed');
+                    await setQueueState({
+                        coachStatus: 'Resumed — continuing',
+                        coachAt: Date.now()
+                    }).catch(() => {});
+                    sendResponse({
+                        ok: true,
+                        queueControl: 'resume',
+                        summary: interpreted.summary || 'Resumed',
+                        tabId,
+                        applicationId: appId
+                    });
+                    return;
+                }
+                if (qc === 'stop') {
+                    await setQueueState({
+                        stopRequested: true,
+                        pauseRequested: false,
+                        running: false,
+                        status: 'stopped',
+                        queueEndedAt: Date.now()
+                    });
+                    await releaseQueueLock().catch(() => {});
+                    await notify('Lumi', 'Stopped');
+                    sendResponse({
+                        ok: true,
+                        queueControl: 'stop',
+                        summary: interpreted.summary || 'Stopped',
+                        tabId,
+                        applicationId: appId
+                    });
+                    return;
+                }
+                if (qc === 'next') {
+                    await setQueueState({ nextClicked: true, pauseRequested: false, status: 'running' });
+                    await notify('Lumi', 'Next job');
+                    sendResponse({
+                        ok: true,
+                        queueControl: 'next',
+                        summary: interpreted.summary || 'Next job',
+                        tabId,
+                        applicationId: appId
+                    });
+                    return;
+                }
+                if (qc === 'skip') {
+                    await setQueueState({
+                        captchaAbandonRequested: true,
+                        captchaResolved: false
+                    });
+                    await notify('Lumi', 'Skip CAPTCHA / blocked job');
+                    sendResponse({
+                        ok: true,
+                        queueControl: 'skip',
+                        summary: interpreted.summary || 'Skip CAPTCHA',
+                        tabId,
+                        applicationId: appId
+                    });
+                    return;
+                }
+
+                // Re-autofill this apply tab — signal client / return so REAUTOFILL can run.
+                if (interpreted.reAutofill) {
+                    await setQueueState({
+                        coachStatus: 'Re-autofill requested…',
+                        coachAt: Date.now()
+                    }).catch(() => {});
+                    await notify('Lumi', 'Re-autofilling…');
+                    await logCourseEvent(appId, 'instruction_reautofill', {
+                        summary: interpreted.summary || null,
+                        host
+                    }).catch(() => {});
+                    sendResponse({
+                        ok: true,
+                        reAutofill: true,
+                        summary: interpreted.summary || 'Re-autofill',
+                        tabId,
+                        applicationId: appId
                     });
                     return;
                 }
@@ -7291,12 +8200,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'BIDDER_STOP') {
         setQueueState({
             stopRequested: true,
+            pauseRequested: false,
             running: false,
             status: 'stopped',
             queueEndedAt: Date.now()
         })
             .then(() => releaseQueueLock())
             .then(() => sendResponse({ ok: true }))
+            .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+        return true;
+    }
+    if (msg?.type === 'BIDDER_PAUSE') {
+        setQueueState({
+            pauseRequested: true,
+            status: 'paused'
+        })
+            .then(() => notify('Bidder', 'Paused — fix the form, then Resume').catch(() => {}))
+            .then(() => sendResponse({ ok: true, paused: true }))
+            .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+        return true;
+    }
+    if (msg?.type === 'BIDDER_RESUME') {
+        setQueueState({
+            pauseRequested: false,
+            status: 'running'
+        })
+            .then(() => notify('Bidder', 'Resumed').catch(() => {}))
+            .then(() => sendResponse({ ok: true, paused: false }))
             .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
         return true;
     }
@@ -7417,6 +8347,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         running: false,
         status: 'idle',
         stopRequested: false,
+        pauseRequested: false,
         error: null
     }).catch(() => {});
     // Re-inject into open Job Links tabs so the user does not need Ctrl+Shift+R.

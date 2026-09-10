@@ -112,12 +112,61 @@ function formatSalary(n, { currency = 'USD', style = 'usd' } = {}) {
 }
 
 /**
- * Choose a salary inside the JD range, preferring overlap with profile.salary_range.
+ * When the JD has no $ range, infer a band from role / seniority / location
+ * so compensation is job-aware instead of always the same profile number.
+ */
+function inferJobSalaryBand({ jobDescription = '', jobRole = '', companyName = '' } = {}) {
+    const hay = `${jobRole || ''} ${companyName || ''} ${String(jobDescription || '').slice(0, 4000)}`.toLowerCase();
+    let mid = 145000;
+    if (/\b(intern|internship|co[\s-]?op)\b/.test(hay)) mid = 75000;
+    else if (/\b(junior|entry[\s-]?level|associate|new grad|graduate)\b/.test(hay)) mid = 105000;
+    else if (/\b(distinguished|fellow|vp\b|vice president|head of)\b/.test(hay)) mid = 240000;
+    else if (/\b(principal|staff)\b/.test(hay)) mid = 215000;
+    else if (/\b(senior|sr\.?|lead)\b/.test(hay)) mid = 175000;
+    else if (/\b(manager|director)\b/.test(hay)) mid = 190000;
+    else if (/\b(mid[\s-]?level|ii\b|2\b)\b/.test(hay)) mid = 140000;
+
+    if (/\b(machine learning|ml engineer|ai engineer|security|cryptograph|platform|sre|devops|infrastructure|data engineer)\b/.test(hay)) {
+        mid = Math.round(mid * 1.08);
+    }
+    if (/\b(frontend|react|ui engineer|support|qa|quality assurance|manual test)\b/.test(hay)) {
+        mid = Math.round(mid * 0.95);
+    }
+    if (/\b(san francisco|bay area|nyc|new york city|seattle|redmond|cupertino|palo alto|mountain view)\b/.test(hay)) {
+        mid = Math.round(mid * 1.1);
+    } else if (/\b(remote|anywhere|midwest|texas|florida|ohio|georgia|north carolina)\b/.test(hay)) {
+        mid = Math.round(mid * 0.94);
+    }
+
+    mid = Math.max(70000, Math.min(350000, mid));
+    // Light job-hash jitter so two different postings with no range don't always get the identical figure.
+    let hash = 0;
+    const key = `${jobRole}|${companyName}|${String(jobDescription || '').slice(0, 240)}`;
+    for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+    const jitter = ((Math.abs(hash) % 11) - 5) * 1000; // -5k … +5k
+    mid = Math.max(70000, mid + jitter);
+    const spread = Math.round(mid * 0.1);
+    return { min: mid - spread, max: mid + spread };
+}
+
+/**
+ * Choose a salary that matches the job when possible.
+ * Always prefers JD range; if none, uses a job-inferred band (optionally blended with profile).
+ * Still always returns a fillable value when any signal exists.
  * @returns {{ value: number, formatted: string, jdRange: object|null, profileRange: object|null, source: string }|null}
  */
-function pickSalaryExpectation({ jobDescription, profileSalaryRange, fieldLabel = '' } = {}) {
+function pickSalaryExpectation({
+    jobDescription,
+    profileSalaryRange,
+    fieldLabel = '',
+    jobRole = '',
+    companyName = ''
+} = {}) {
     const jdRange = parseRangeFromText(jobDescription);
     const profileRange = parseRangeFromText(profileSalaryRange);
+    const jobBand = (!jdRange)
+        ? inferJobSalaryBand({ jobDescription, jobRole, companyName })
+        : null;
 
     let min;
     let max;
@@ -140,6 +189,27 @@ function pickSalaryExpectation({ jobDescription, profileSalaryRange, fieldLabel 
         min = jdRange.min;
         max = jdRange.max;
         source = 'jd_only';
+    } else if (jobBand && profileRange) {
+        // No JD $ — blend job-inferred band with profile so value tracks the posting, not a fixed profile-only number.
+        const lo = Math.min(jobBand.min, profileRange.min);
+        const hi = Math.max(jobBand.max, profileRange.max);
+        // Prefer the job band center; clamp toward profile if wildly off.
+        min = jobBand.min;
+        max = jobBand.max;
+        const jobMid = (jobBand.min + jobBand.max) / 2;
+        const profMid = (profileRange.min + profileRange.max) / 2;
+        if (Math.abs(jobMid - profMid) > 80000) {
+            min = Math.round((jobBand.min + profileRange.min) / 2);
+            max = Math.round((jobBand.max + profileRange.max) / 2);
+        }
+        if (lo > 0 && hi > lo) {
+            /* keep job-first band */
+        }
+        source = 'job_inferred_blend';
+    } else if (jobBand) {
+        min = jobBand.min;
+        max = jobBand.max;
+        source = 'job_inferred';
     } else if (profileRange) {
         min = profileRange.min;
         max = profileRange.max;
@@ -154,7 +224,10 @@ function pickSalaryExpectation({ jobDescription, profileSalaryRange, fieldLabel 
             source: 'profile_raw'
         };
     } else {
-        return null;
+        // Last resort — still fill so required fields are not blank.
+        min = 120000;
+        max = 160000;
+        source = 'default_mid';
     }
 
     // Mid-low of band (~35%) — competitive but not anchoring the top of the posting.
@@ -173,6 +246,7 @@ function pickSalaryExpectation({ jobDescription, profileSalaryRange, fieldLabel 
         formatted,
         jdRange,
         profileRange,
+        jobBand,
         source
     };
 }
@@ -217,5 +291,6 @@ module.exports = {
     pickSalaryExpectation,
     matchSalaryOption,
     formatSalary,
-    extractMoneyAmounts
+    extractMoneyAmounts,
+    inferJobSalaryBand
 };

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { formatDurationCompact } from '@/lib/bidCourseFailure';
+import { parseSqliteUtcMs } from '@/lib/sqliteDate';
 
 /** Format persisted CV generation duration (ms) → "12s", "1m 5s". */
 export function formatCvGenerationMs(ms) {
@@ -8,21 +10,45 @@ export function formatCvGenerationMs(ms) {
 }
 
 /**
+ * One clock: first Generating start → Ready/Failed finish (or now if still running).
+ */
+export function cvGenerationDurationMs(row, { now = Date.now() } = {}) {
+    if (!row) return null;
+    const start = parseSqliteUtcMs(row.generation_started_at);
+    const status = String(row.generation_status || '');
+    if (status === 'generating') {
+        if (!Number.isFinite(start) || start <= 0) return null;
+        return Math.max(0, now - start);
+    }
+    if (Number.isFinite(start) && start > 0) {
+        const end = parseSqliteUtcMs(row.generation_finished_at);
+        if (Number.isFinite(end) && end >= start) return end - start;
+    }
+    const stored = Number(row.generation_ms);
+    if (Number.isFinite(stored) && stored > 0) return stored;
+    return null;
+}
+
+/**
  * Label for a Job Links CV chip / card.
- * Ready → stored generation_ms; generating → elapsed since updated_at.
+ * Ready / failed → start→finish (or stored generation_ms).
+ * Generating → elapsed since generation_started_at.
  */
 export function cvGenerationTimeLabel(row, { now = Date.now() } = {}) {
     if (!row) return null;
     const status = String(row.generation_status || '');
-    if (status === 'ready') {
-        return formatCvGenerationMs(row.generation_ms);
-    }
-    if (status === 'generating' || status === 'pending') {
-        const start = row.generation_updated_at || row.updated_at || row.created_at;
-        if (!start) return null;
-        const t = new Date(start).getTime();
-        if (!Number.isFinite(t) || t <= 0) return null;
-        return formatDurationCompact(Math.max(0, (now - t) / 1000));
-    }
-    return formatCvGenerationMs(row.generation_ms);
+    if (status === 'pending') return formatCvGenerationMs(row.generation_ms);
+    return formatCvGenerationMs(cvGenerationDurationMs(row, { now }));
+}
+
+/** Re-render once a second while any CV is generating so the chip clock moves. */
+export function useNowTick(active, intervalMs = 1000) {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!active) return undefined;
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), intervalMs);
+        return () => clearInterval(id);
+    }, [active, intervalMs]);
+    return now;
 }

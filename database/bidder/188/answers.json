@@ -1,0 +1,55 @@
+[
+  {
+    "id": "question_66884123",
+    "label": "Are you legally authorized to work in the United States for our Company?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_66884124",
+    "label": "Will you now, or in the future, require sponsorship (i.e. H-1B visa, etc.) to legally work in the U.S.?*",
+    "answer": "No",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "requires_sponsorship",
+    "knockout": true
+  },
+  {
+    "id": "question_66884125",
+    "label": "How did you hear about this opportunity?",
+    "answer": "a prior company",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "how_heard",
+    "knockout": false
+  },
+  {
+    "id": "disability_status",
+    "label": "Disability Status",
+    "answer": "No, I do not have a disability",
+    "source": "hard_lock",
+    "match_source": "hard_lock",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "disability_status",
+    "knockout": true,
+    "failure_code": "knockout_lock"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Palo Alto, CA, 94306",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

@@ -50,6 +50,40 @@ checks.push(['canAutoSubmit blocks incomplete', canAutoSubmit(incomplete, { auto
 checks.push(['canAutoSubmit allows complete', canAutoSubmit(complete, { autoSubmit: true }) === true]);
 checks.push(['canAutoSubmit respects prefs off', canAutoSubmit(complete, { autoSubmit: false }) === false]);
 
+const resumeMissing = normalizeFillStats({
+    requiredComplete: true,
+    requiredOk: 3,
+    requiredTotal: 3,
+    filled: 3,
+    resumeRequired: true,
+    uploadedResume: 0,
+    uploaded: 0
+});
+checks.push(['resume missing overrides complete', resumeMissing.requiredComplete === false]);
+checks.push(['resume missing listed', resumeMissing.missingRequired.some((m) => /r[ée]sum/i.test(m))]);
+checks.push(['canAutoSubmit blocks empty resume', canAutoSubmit(resumeMissing, { autoSubmit: true }) === false]);
+checks.push(['isFillIncomplete empty resume', isFillIncomplete(resumeMissing) === true]);
+
+const resumeOk = normalizeFillStats({
+    requiredComplete: true,
+    requiredOk: 3,
+    requiredTotal: 3,
+    filled: 3,
+    resumeRequired: true,
+    uploadedResume: 1,
+    uploaded: 1
+});
+checks.push(['resume uploaded allows submit', canAutoSubmit(resumeOk, { autoSubmit: true }) === true]);
+
+const visibleErr = normalizeFillStats({
+    requiredComplete: true,
+    requiredOk: 3,
+    requiredTotal: 3,
+    filled: 3,
+    visibleRequiredErrors: true
+});
+checks.push(['visible required errors block submit', canAutoSubmit(visibleErr, { autoSubmit: true }) === false]);
+
 checks.push(['workday budget > base', bidLimitMsForAts('workday') > FILL_VERIFY_BASE_LIMIT_MS]);
 checks.push(['page bump capped', bidLimitMsForAts('workday', { pageCount: 6 }) <= 150000]);
 checks.push(['form wait workday longer', formWaitMsForAts('workday', 12000) >= 18000]);

@@ -1,0 +1,89 @@
+[
+  {
+    "id": "question_38193471002",
+    "label": "How did you first hear about this job? Please list the site, event, or person that referred you.*",
+    "answer": "a prior company",
+    "answer_type": "fixed",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "how_heard",
+    "lane": "profile",
+    "knockout": false
+  },
+  {
+    "id": "question_38193473002",
+    "label": "What are your salary expectations?*",
+    "answer": "$180,000",
+    "answer_type": "salary",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "salary",
+    "lane": "salary"
+  },
+  {
+    "id": "question_38193474002",
+    "label": "Are you legally authorized to work in the United States for TORC Robotics?*",
+    "answer": "Yes",
+    "answer_type": "fixed",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "work_authorization",
+    "lane": "profile",
+    "knockout": true
+  },
+  {
+    "id": "question_38193475002",
+    "label": "Do you require or will you require sponsorship for employment visa status (e.g., H-1B visa status, etc.) to work legally in the United States for TORC Robotics?*",
+    "answer": "No",
+    "answer_type": "fixed",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "requires_sponsorship",
+    "lane": "profile",
+    "knockout": true
+  },
+  {
+    "id": "question_38193476002[]_253348275002",
+    "label": "The disputed Crimea, Donetsk, or Luhansk regions of Ukraine",
+    "answer": "No",
+    "source": "question_memory",
+    "match_source": "question_memory",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "sanctioned_countries_no",
+    "knockout": true,
+    "memory_score": 0.5625,
+    "memory_gap": 1,
+    "failure_code": "knockout_lock"
+  },
+  {
+    "id": "question_38193477002[]_253348280002",
+    "label": "I reside in Cuba, Iran, North Korea, Syria, The disputed Crimea, Donetsk, or Luhansk regions of Ukraine.",
+    "answer": "No",
+    "answer_type": "fixed",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "question",
+    "lane": "policy",
+    "knockout": true
+  },
+  {
+    "id": "disability_status",
+    "label": "Disability Status",
+    "answer": "No, I do not have a disability",
+    "answer_type": "fixed",
+    "source": "cached",
+    "match_source": "saved_answers_reuse",
+    "kind": "disability_status",
+    "lane": "policy",
+    "knockout": true
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Palo Alto, CA, 94306",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

@@ -14,7 +14,7 @@
 //     DELETE /job-links/:id            remove a row
 //
 //   Filters supported by GET /job-links:
-//     search, techstack, available, date_from, date_to, fetch_status,
+//     search, techstack, platform, available, date_from, date_to, fetch_status,
 //     has_generated_resume (=1 to restrict to rows that have at
 //     least one job_applications row with generation_status='ready'
 //     and a non-empty resume_filename).
@@ -45,6 +45,7 @@ const {
     resolveStoredJobUrls
 } = require('../services/scraper/jobLinkUrl');
 const jobMatchService = require('../services/jobMatchService');
+const { platformFilterSql } = require('../services/scraper/jobLinkPlatform');
 
 const router = express.Router();
 const adminWriteRouter = express.Router();
@@ -118,6 +119,7 @@ function decorateJobLinksWithCreators(rows) {
 function buildJobLinkListFilters(query = {}) {
     const search = (query.search || '').trim();
     const techstack = (query.techstack || 'all').trim();
+    const platform = (query.platform || query.ats || 'all').trim();
     const available = (query.available || 'all').trim();
     const dateFrom = (query.date_from || '').trim();
     const dateTo = (query.date_to || '').trim();
@@ -136,14 +138,30 @@ function buildJobLinkListFilters(query = {}) {
             source_url LIKE ? OR
             job_apply_url LIKE ? OR
             IFNULL(comment, '') LIKE ?
+            OR EXISTS (
+                SELECT 1 FROM job_applications ja
+                JOIN candidate_profiles cp ON cp.id = ja.profile_id
+                WHERE ja.job_link_id = job_links.id
+                  AND (
+                    cp.first_name LIKE ?
+                    OR cp.last_name LIKE ?
+                    OR (IFNULL(cp.first_name, '') || ' ' || IFNULL(cp.last_name, '')) LIKE ?
+                  )
+            )
         )`);
         const like = `%${search}%`;
-        for (let i = 0; i < 6; i += 1) params.push(like);
+        for (let i = 0; i < 9; i += 1) params.push(like);
     }
 
     if (techstack && techstack !== 'all' && VALID_TECHSTACKS.includes(techstack)) {
         conds.push('techstack = ?');
         params.push(techstack);
+    }
+
+    const platformSql = platformFilterSql(platform);
+    if (platformSql) {
+        conds.push(platformSql.sql);
+        params.push(...platformSql.params);
     }
 
     if (available === '1') {
@@ -172,6 +190,58 @@ function buildJobLinkListFilters(query = {}) {
                AND ja.generation_status = 'ready'
                AND ja.resume_filename IS NOT NULL
                AND ja.resume_filename <> ''
+        )`);
+    }
+
+    const bidState = String(query.bid_state || query.bid || 'all').trim().toLowerCase();
+    if (bidState === 'success') {
+        conds.push(`EXISTS (
+            SELECT 1 FROM job_applications ja
+            LEFT JOIN bid_courses c ON c.application_id = ja.id
+            WHERE ja.job_link_id = job_links.id
+              AND (
+                ja.status = 'applied'
+                OR c.outcome = 'applied'
+                OR c.applied_at IS NOT NULL
+                OR EXISTS (
+                    SELECT 1 FROM bid_course_events e
+                    WHERE e.course_id = c.id
+                      AND e.event_type IN ('marked_applied', 'submitted_ok', 'mark_applied', 'submit_success_detected')
+                )
+              )
+        )`);
+    } else if (bidState === 'filled') {
+        conds.push(`EXISTS (
+            SELECT 1 FROM job_applications ja
+            LEFT JOIN bid_courses c ON c.application_id = ja.id
+            WHERE ja.job_link_id = job_links.id
+              AND c.filled_at IS NOT NULL
+              AND IFNULL(ja.status, '') NOT IN ('applied', 'interview')
+              AND IFNULL(c.outcome, '') != 'applied'
+              AND c.applied_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM bid_course_events e
+                WHERE e.course_id = c.id
+                  AND e.event_type IN ('marked_applied', 'submitted_ok', 'mark_applied', 'submit_success_detected')
+              )
+        )`);
+    } else if (bidState === 'failed') {
+        conds.push(`EXISTS (
+            SELECT 1 FROM job_applications ja
+            LEFT JOIN bid_courses c ON c.application_id = ja.id
+            WHERE ja.job_link_id = job_links.id
+              AND (
+                ja.status = 'rejected'
+                OR ja.state IN ('rejected', 'cancelled')
+                OR EXISTS (
+                    SELECT 1 FROM bid_course_events e
+                    WHERE e.course_id = c.id
+                      AND e.event_type IN (
+                        'fill_failed', 'open_failed', 'blocked_ats',
+                        'cv_regenerate_failed', 'reautofill_failed', 'bid_budget_exceeded'
+                      )
+                )
+              )
         )`);
     }
 
@@ -595,8 +665,23 @@ async function patchHandler(req, res) {
         }
 
         if ('is_available' in body) {
+            const available = body.is_available ? 1 : 0;
             fields.push('is_available = ?');
-            params.push(body.is_available ? 1 : 0);
+            params.push(available);
+            // Re-enabling a row clears an auto-expired flag so the
+            // Expired badge does not stick after a human override.
+            if (available === 1 && !('closed_reason' in body)) {
+                fields.push('closed_reason = NULL');
+            }
+        }
+
+        if ('closed_reason' in body) {
+            const raw = body.closed_reason;
+            const normalized = (raw == null || String(raw).trim() === '')
+                ? null
+                : String(raw).trim().slice(0, 40);
+            fields.push('closed_reason = ?');
+            params.push(normalized);
         }
 
         if (sourceChanged) {
@@ -858,42 +943,23 @@ async function applicationRegenerateHandler(req, res) {
         const profile = getOne('SELECT * FROM candidate_profiles WHERE id = ?', [application.profile_id]);
         if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
-        // Mark the row as regenerating so the UI shows the spinner.
-        runQuery(
-            `UPDATE job_applications
-             SET generation_status = 'generating', generation_error = NULL,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [appId]
-        );
-        saveDatabase();
+        // Stay `pending` until the serial worker actually starts so a
+        // second Regenerate does not show a live Generating clock.
+        // Re-stamp template/font from the live profile (assigned after
+        // the first attempt still applies on this run).
+        jobMatchService.markApplicationQueuedForGeneration(appId, profile);
 
-        try {
-            const resumeQueue = require('../services/resumeQueueService');
-            await resumeQueue.enqueueGeneration(profile.id, jobLinkId, {
-                correlationId: `regen-app-${appId}`
-            });
-            res.json({
-                ok: true,
-                resume_filename: application.resume_filename,
-                generation_status: 'generating',
-                queued: true
-            });
-        } catch (genErr) {
-            // RabbitMQ optional — regenerate inline when the broker is down.
-            console.warn('[regenerate] queue unavailable, falling back to in-process:', genErr.message);
-            setImmediate(() => {
-                jobMatchService.processQueuedPair({ profileId: profile.id, jobLinkId })
-                    .catch((err) => console.error('[regenerate] in-process failed:', err.message));
-            });
-            res.json({
-                ok: true,
-                resume_filename: application.resume_filename,
-                generation_status: 'generating',
-                queued: false,
-                fallback: true
-            });
-        }
+        const resumeQueue = require('../services/resumeQueueService');
+        await resumeQueue.enqueueGeneration(profile.id, jobLinkId, {
+            correlationId: `regen-app-${appId}`,
+            force: true
+        });
+        res.json({
+            ok: true,
+            resume_filename: application.resume_filename,
+            generation_status: 'pending',
+            queued: true
+        });
     } catch (err) {
         console.error('Regenerate application error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -993,6 +1059,40 @@ function jobLinkMarkAppliedHandler(req, res) {
     }
 }
 
+// POST /job-links/:id/expired
+// Bidder (or scrape) saw a closed / no-longer-open posting. Flip
+// the link unavailable and stamp closed_reason so Job Links shows
+// an Expired badge and the ready queue skips it.
+function jobLinkMarkExpiredHandler(req, res) {
+    try {
+        const jobLinkId = parseInt(req.params.id, 10);
+        if (!jobLinkId) return res.status(400).json({ error: 'Invalid id' });
+
+        const jobLink = getOne('SELECT * FROM job_links WHERE id = ?', [jobLinkId]);
+        if (!jobLink) return res.status(404).json({ error: 'Job link not found' });
+
+        runQuery(
+            `UPDATE job_links
+             SET is_available = 0,
+                 closed_reason = 'expired',
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [jobLinkId]
+        );
+        saveDatabase();
+
+        res.json({
+            ok: true,
+            job_link_id: jobLinkId,
+            is_available: 0,
+            closed_reason: 'expired'
+        });
+    } catch (err) {
+        console.error('Job-link mark expired error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
+
 // Open routes (any authenticated user). Mounted at top-level `/` in
 // index.js, so the full paths are `/job-links/...`.
 router.get('/job-links',                  listHandler);
@@ -1014,6 +1114,7 @@ router.post('/job-links/:id/applications/:appId/apply',         applicationMarkA
 // fresh resumes for it. Open to any authenticated user so both
 // admin and user / caller / manager can trigger it.
 router.post('/job-links/:id/apply',                              jobLinkMarkAppliedHandler);
+router.post('/job-links/:id/expired',                            jobLinkMarkExpiredHandler);
 
 // Admin-only scrape endpoint. Mounted at `/admin` in index.js, so the
 // full path is `/admin/job-links/:id/scrape`. We keep scraping gated
@@ -1058,6 +1159,46 @@ adminWriteRouter.post('/job-links/:id/refetch', refetchHandler);
 router.post('/job-links/:id/refetch', refetchHandler);
 
 // -----------------------------------------------------------------------------
+// POST /job-links/:id/reconcile-cvs
+// POST /job-links/reconcile-cvs  { ids: number[] }
+//
+// Enqueue CV generation for matching profiles that do not yet have a
+// job_applications row. Used when a new profile is added after the
+// job was first processed — the cron used to skip those jobs.
+// -----------------------------------------------------------------------------
+async function reconcileCvsHandler(req, res) {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ error: 'Invalid id' });
+        const jobLink = getOne('SELECT * FROM job_links WHERE id = ?', [id]);
+        if (!jobLink) return res.status(404).json({ error: 'Job link not found' });
+        if (!jobLink.job_description || !String(jobLink.job_description).trim()) {
+            return res.json({ ok: true, id, enqueued: 0, skipped: 'no_jd' });
+        }
+        const result = await jobMatchService.reconcileJobLinkAfterMetadataChange(id);
+        res.json({ ok: true, id, enqueued: result.enqueued || 0 });
+    } catch (err) {
+        console.error('Reconcile CVs error:', err);
+        res.status(500).json({ error: err.message || 'Internal server error' });
+    }
+}
+
+async function reconcileCvsBulkHandler(req, res) {
+    try {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+        if (!ids.length) return res.status(400).json({ error: 'ids required' });
+        const result = await jobMatchService.reconcileJobLinks(ids);
+        res.json({ ok: true, ...result });
+    } catch (err) {
+        console.error('Bulk reconcile CVs error:', err);
+        res.status(500).json({ error: err.message || 'Internal server error' });
+    }
+}
+
+router.post('/job-links/reconcile-cvs', reconcileCvsBulkHandler);
+router.post('/job-links/:id/reconcile-cvs', reconcileCvsHandler);
+
+// -----------------------------------------------------------------------------
 // POST /admin/job-links/:id/generate/:profileId
 //
 // Manually creates a job_applications row for a (profile, job_link)
@@ -1098,17 +1239,12 @@ async function generateForProfileHandler(req, res) {
             [jobLinkId, profileId]
         );
         if (existing) {
+            jobMatchService.markApplicationQueuedForGeneration(existing.id, profile);
             const resumeQueue = require('../services/resumeQueueService');
-            try {
-                await resumeQueue.enqueueGeneration(profileId, jobLinkId, {
-                    correlationId: `manual-existing-app-${existing.id}`
-                });
-            } catch (queueErr) {
-                console.warn('[generate] queue unavailable, falling back to in-process:', queueErr.message);
-                jobMatchService
-                    .processQueuedPair({ profileId, jobLinkId })
-                    .catch((err) => console.error('[generate] in-process failed:', err.message));
-            }
+            await resumeQueue.enqueueGeneration(profileId, jobLinkId, {
+                correlationId: `manual-existing-app-${existing.id}`,
+                force: true
+            });
             return res.json({
                 ok: true,
                 application_id: existing.id,
@@ -1128,16 +1264,9 @@ async function generateForProfileHandler(req, res) {
         }
 
         const resumeQueue = require('../services/resumeQueueService');
-        try {
-            await resumeQueue.enqueueGeneration(profileId, jobLinkId, {
-                correlationId: `manual-app-${applicationId}`
-            });
-        } catch (queueErr) {
-            console.warn('[generate] queue unavailable, falling back to in-process:', queueErr.message);
-            jobMatchService
-                .processQueuedPair({ profileId, jobLinkId })
-                .catch((err) => console.error('[generate] in-process failed:', err.message));
-        }
+        await resumeQueue.enqueueGeneration(profileId, jobLinkId, {
+            correlationId: `manual-app-${applicationId}`
+        });
 
         res.json({
             ok: true,

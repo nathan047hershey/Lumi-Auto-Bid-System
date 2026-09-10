@@ -207,6 +207,8 @@ function Analyze({ embedded = false }) {
     const usage = data?.usage;
     const cc = usage?.chat_counts || {};
     const limits = usage?.limits || {};
+    const groq = usage?.groq || null;
+    const groqPool = groq?.pool || null;
     const insights = data?.insights;
     const summary = insights?.summary || data?.bids?.summary || {};
     const playbook = insights?.playbook;
@@ -256,13 +258,35 @@ function Analyze({ embedded = false }) {
 
     const chatKindBars = useMemo(() => {
         const period = cc.by_kind_period || {};
-        return ['chat', 'cv', 'answers', 'bidder', 'analyze', 'other']
+        return ['chat', 'cv', 'answers', 'bidder', 'analyze', 'checkout', 'other']
             .filter((k) => period[k] || usage?.by_kind?.[k]?.calls)
             .map((k) => ({
                 label: k === 'chat' ? 'Generate chat' : k,
                 value: period[k] ?? usage?.by_kind?.[k]?.calls ?? 0
             }));
     }, [cc, usage]);
+
+    const groqKindBars = useMemo(() => {
+        const period = groq?.by_kind_period || {};
+        return Object.entries(period)
+            .map(([k, v]) => ({ label: k, value: v?.calls ?? 0 }))
+            .sort((a, b) => b.value - a.value);
+    }, [groq]);
+
+    const groqDailyBars = useMemo(
+        () => (groq?.daily_series || []).slice(-14).map((d) => ({
+            label: String(d.day || '').slice(5),
+            value: d.calls || 0
+        })),
+        [groq]
+    );
+
+    const groqHourlyBars = useMemo(
+        () => (groq?.hourly_today || [])
+            .filter((h) => h.calls > 0)
+            .map((h) => ({ label: h.label, value: h.calls })),
+        [groq]
+    );
 
     const dayNamesFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const totalBids = summary.bids ?? summary.courses ?? 0;
@@ -275,7 +299,7 @@ function Analyze({ embedded = false }) {
             description={
                 isAdmin
                     ? 'What correlates with interviews — company, timing, CV, usage.'
-                    : 'Interview signals by company, timing, CV style, and MiniMax usage.'
+                    : 'Interview signals by company, timing, CV style, MiniMax + Groq usage.'
             }
         >
             <div className="space-y-3">
@@ -642,11 +666,12 @@ function Analyze({ embedded = false }) {
                         {/* Usage */}
                         <TabsContent value="usage" className="mt-0 space-y-3">
                             <p className="text-xs text-white/45">
-                                Each successful MiniMax API call = <span className="font-medium text-white/80">1 chat</span>.
+                                MiniMax: each successful API call = <span className="font-medium text-white/80">1 chat</span>
+                                {' '}· Groq autofill: per-key RPD/TPD, hourly/daily, and a written report.
                             </p>
                             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                                 <Kpi
-                                    label="Today"
+                                    label="MiniMax today"
                                     value={
                                         limits?.day
                                             ? `${cc.today ?? 0} / ${limits.day}`
@@ -660,8 +685,271 @@ function Analyze({ embedded = false }) {
                                     value={cc.period ?? usage?.total_calls ?? 0}
                                 />
                             </div>
+
+                            <Panel
+                                title="Groq detail report"
+                                hint={
+                                    groq
+                                        ? `${groq.active_model || 'openai/gpt-oss-20b'} · ${groq.keys_configured ?? 0} keys · slot ${groq.active_slot ?? '—'}`
+                                        : 'No Groq data'
+                                }
+                            >
+                                {groq?.report ? (
+                                    <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-white/80">
+                                        {groq.report}
+                                    </pre>
+                                ) : (
+                                    <p className="text-xs text-white/40">Report will appear after Groq autofill calls.</p>
+                                )}
+                            </Panel>
+
+                            <Panel
+                                title="Groq pool & keys"
+                                hint={
+                                    groq
+                                        ? `Free defaults ${groq.limits?.rpd ?? 1000} RPD / ${(groq.limits?.tpd ?? 200000).toLocaleString()} TPD per org · binding ${groqPool?.binding_limit || '—'}`
+                                        : 'No Groq usage data yet'
+                                }
+                            >
+                                {groq ? (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                                            <Kpi
+                                                label="Calls today"
+                                                value={groq.today?.calls ?? 0}
+                                                hint={`avg ${groq.today?.avg_tokens ?? 0} tok · fails ${groq.today?.fails ?? 0}`}
+                                            />
+                                            <Kpi
+                                                label="Tokens today"
+                                                value={(groq.today?.total_tokens ?? 0).toLocaleString()}
+                                                hint={`in ${(groq.today?.prompt_tokens ?? 0).toLocaleString()} / out ${(groq.today?.completion_tokens ?? 0).toLocaleString()}`}
+                                            />
+                                            <Kpi
+                                                label="Pool used"
+                                                value={`${groqPool?.rpd_used_pct ?? 0}% RPD · ${groqPool?.tpd_used_pct ?? 0}% TPD`}
+                                                accent={(groqPool?.tpd_used_pct ?? 0) >= 70 || (groqPool?.rpd_used_pct ?? 0) >= 70 ? 'warn' : undefined}
+                                            />
+                                            <Kpi
+                                                label="Est. autofills left"
+                                                value={groqPool?.est_autofills_left
+                                                    ?? Math.min(
+                                                        groqPool?.est_autofills_left_by_rpd ?? 0,
+                                                        groqPool?.est_autofills_left_by_tpd ?? 0
+                                                    )}
+                                                hint={`~${groqPool?.assumed_calls_per_fill ?? 2} calls / ~${(groqPool?.assumed_tokens_per_fill ?? 6000).toLocaleString()} tok`}
+                                                accent={
+                                                    (groqPool?.est_autofills_left ?? 0) < 20 ? 'warn' : 'good'
+                                                }
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                                            <Kpi label="Last 5 hours" value={groq.last_5_hours?.calls ?? 0} />
+                                            <Kpi
+                                                label="Last 7 days"
+                                                value={groq.last_7_days?.calls ?? 0}
+                                                hint={`${(groq.last_7_days?.total_tokens ?? 0).toLocaleString()} tok`}
+                                            />
+                                            <Kpi
+                                                label={`Period (${groq.period?.since_days ?? 30}d)`}
+                                                value={groq.period?.calls ?? 0}
+                                                hint={`${(groq.period?.total_tokens ?? 0).toLocaleString()} tok · fails ${groq.period?.fails ?? 0}`}
+                                            />
+                                            <Kpi
+                                                label="Peak hour (UTC)"
+                                                value={groq.peak_hour?.label || '—'}
+                                                hint={groq.peak_hour ? `${groq.peak_hour.calls} calls` : 'no traffic'}
+                                            />
+                                        </div>
+                                        {(groq.by_key || []).length ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full min-w-[560px] text-left text-xs">
+                                                    <thead>
+                                                        <tr className="border-b border-white/[0.06] text-white/40">
+                                                            <th className="py-1.5 pr-2 font-medium">Key</th>
+                                                            <th className="py-1.5 pr-2 font-medium">Today</th>
+                                                            <th className="py-1.5 pr-2 font-medium">Tokens</th>
+                                                            <th className="py-1.5 pr-2 font-medium">Avg</th>
+                                                            <th className="py-1.5 pr-2 font-medium">Period</th>
+                                                            <th className="py-1.5 pr-2 font-medium">RPD%</th>
+                                                            <th className="py-1.5 pr-2 font-medium">TPD%</th>
+                                                            <th className="py-1.5 font-medium">Health</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {groq.by_key.map((row, i) => (
+                                                            <tr
+                                                                key={`gk-${row.slot ?? 'x'}-${i}`}
+                                                                className="border-b border-white/[0.04]"
+                                                            >
+                                                                <td className="py-1.5 pr-2 font-medium text-white/85">
+                                                                    {row.unlabeled ? 'Unlabeled' : `Key ${row.slot}`}
+                                                                    {row.active ? (
+                                                                        <span className="ml-1 text-[10px] text-emerald-400">active</span>
+                                                                    ) : null}
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {row.calls_today ?? 0}
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {(row.tokens_today ?? 0).toLocaleString()}
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {row.avg_tokens_today ?? '—'}
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {row.calls_period ?? 0}
+                                                                    <span className="text-white/35">
+                                                                        {' · '}{(row.tokens_period ?? 0).toLocaleString()}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {row.rpd_used_pct != null ? `${row.rpd_used_pct}%` : '—'}
+                                                                </td>
+                                                                <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                                    {row.tpd_used_pct != null ? `${row.tpd_used_pct}%` : '—'}
+                                                                </td>
+                                                                <td className={cn(
+                                                                    'py-1.5 capitalize',
+                                                                    row.health === 'critical' && 'text-red-300',
+                                                                    row.health === 'warn' && 'text-amber-300',
+                                                                    row.health === 'ok' && 'text-emerald-400'
+                                                                )}
+                                                                >
+                                                                    {row.health || '—'}
+                                                                    {row.binding_limit ? (
+                                                                        <span className="ml-1 text-[10px] text-white/35">
+                                                                            ({row.binding_limit})
+                                                                        </span>
+                                                                    ) : null}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-white/40">
+                                                No Groq calls today yet. Autofill answers will show here per key.
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-white/40">Groq analytics unavailable.</p>
+                                )}
+                            </Panel>
+
                             <div className="grid gap-3 lg:grid-cols-2">
-                                <Panel title="Chats by type">
+                                <Panel title="Groq by type (period)" hint="bidder / answers / checkout">
+                                    <HorizontalBarChart
+                                        items={groqKindBars}
+                                        accent={CHART.scheduled}
+                                        emptyText="No Groq kinds yet"
+                                        maxItems={8}
+                                    />
+                                </Panel>
+                                <Panel title="Groq daily calls" hint="last 14 days with traffic">
+                                    <HorizontalBarChart
+                                        items={groqDailyBars}
+                                        accent={CHART.secondary}
+                                        emptyText="No daily series yet"
+                                        maxItems={14}
+                                    />
+                                </Panel>
+                                <Panel title="Groq hours today (UTC)" hint="only hours with calls">
+                                    <HorizontalBarChart
+                                        items={groqHourlyBars}
+                                        accent={CHART.primary}
+                                        emptyText="No hourly traffic today"
+                                        maxItems={12}
+                                    />
+                                </Panel>
+                                <Panel title="Groq models" hint="period mix">
+                                    {(groq?.by_model || []).length ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-white/[0.06] text-white/40">
+                                                        <th className="py-1.5 pr-2 font-medium">Model</th>
+                                                        <th className="py-1.5 pr-2 font-medium">Calls</th>
+                                                        <th className="py-1.5 font-medium">Tokens</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {groq.by_model.map((m) => (
+                                                        <tr key={m.model} className="border-b border-white/[0.04]">
+                                                            <td className="py-1.5 pr-2 font-mono text-[11px] text-white/80">
+                                                                {m.model}
+                                                            </td>
+                                                            <td className="py-1.5 pr-2 tabular-nums text-white/70">{m.calls}</td>
+                                                            <td className="py-1.5 tabular-nums text-white/70">
+                                                                {(m.total_tokens || 0).toLocaleString()}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-white/40">No model mix yet.</p>
+                                    )}
+                                </Panel>
+                            </div>
+
+                            <Panel title="Recent Groq calls" hint="includes fails · 1 row = 1 API call">
+                                {(groq?.recent || []).length ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[520px] text-left text-xs">
+                                            <thead>
+                                                <tr className="border-b border-white/[0.06] text-white/40">
+                                                    <th className="py-1.5 pr-2 font-medium">When</th>
+                                                    <th className="py-1.5 pr-2 font-medium">Key</th>
+                                                    <th className="py-1.5 pr-2 font-medium">Type</th>
+                                                    <th className="py-1.5 pr-2 font-medium">In/Out</th>
+                                                    <th className="py-1.5 pr-2 font-medium">Total</th>
+                                                    <th className="py-1.5 font-medium">OK</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {groq.recent.slice(0, 20).map((row) => (
+                                                    <tr key={row.id} className="border-b border-white/[0.04]">
+                                                        <td className="whitespace-nowrap py-1.5 pr-2 text-white/45">
+                                                            {row.created_at
+                                                                ? new Date(row.created_at).toLocaleString()
+                                                                : '—'}
+                                                        </td>
+                                                        <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                            {row.key_slot != null ? row.key_slot : '—'}
+                                                        </td>
+                                                        <td className="py-1.5 pr-2 capitalize text-white/80">
+                                                            {row.kind || '—'}
+                                                        </td>
+                                                        <td className="py-1.5 pr-2 tabular-nums text-white/55">
+                                                            {(row.prompt_tokens ?? '—')}/{(row.completion_tokens ?? '—')}
+                                                        </td>
+                                                        <td className="py-1.5 pr-2 tabular-nums text-white/70">
+                                                            {row.total_tokens != null
+                                                                ? Number(row.total_tokens).toLocaleString()
+                                                                : '—'}
+                                                        </td>
+                                                        <td className={cn(
+                                                            'py-1.5',
+                                                            row.success === 0 ? 'text-red-300' : 'text-emerald-400'
+                                                        )}
+                                                        >
+                                                            {row.success === 0 ? 'fail' : 'ok'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-white/40">No Groq calls logged yet.</p>
+                                )}
+                            </Panel>
+
+                            <div className="grid gap-3 lg:grid-cols-2">
+                                <Panel title="MiniMax chats by type">
                                     <HorizontalBarChart
                                         items={chatKindBars}
                                         accent={CHART.primary}

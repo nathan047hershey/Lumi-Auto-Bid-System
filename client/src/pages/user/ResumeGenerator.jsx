@@ -22,6 +22,15 @@ import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { writeCvQualityCache } from './CvQualityReport';
+import {
+    restoreGenerateSessionFromStorage,
+    subscribeGenerateSession,
+    startGenerateSession,
+    clearGenerateSession,
+    getGenerateSession,
+    getGenerateFormSnapshot,
+    isGenerateRunning
+} from '@/lib/generateResumeSession';
 
 // Available tech stack / core skill options for the multi-select
 const SKILL_OPTIONS = [
@@ -131,6 +140,31 @@ function draftForProfile(routeProfileId) {
     // Draft saved before a profile was chosen, or open /generate without :id
     if (!dp || !rp) return d;
     return null;
+}
+
+/** Prefer an in-flight generate's form snapshot, else the saved draft. */
+function formSeedForProfile(routeProfileId) {
+    const session = restoreGenerateSessionFromStorage() || getGenerateSession();
+    if (
+        session
+        && session.formSnapshot
+        && String(session.profileId) === String(routeProfileId || '')
+    ) {
+        const snap = session.formSnapshot;
+        const draft = draftForProfile(routeProfileId) || {};
+        return {
+            ...draft,
+            jobDescription: snap.jobDescription || draft.jobDescription || '',
+            companyName: snap.companyName || draft.companyName || '',
+            jobRole: snap.jobRole || draft.jobRole || '',
+            jobUrl: snap.jobUrl || draft.jobUrl || '',
+            coreSkills: Array.isArray(snap.coreSkills) && snap.coreSkills.length
+                ? snap.coreSkills
+                : (draft.coreSkills || []),
+            selectedFont: snap.selectedFont || draft.selectedFont || 'Arial'
+        };
+    }
+    return draftForProfile(routeProfileId);
 }
 
 // Build the JSON envelope that the paste handler will recognise.
@@ -262,8 +296,10 @@ function ResumeGenerator() {
     const { user: authUser } = useAuth();
 
     // Restore last Generate session when navigating away and back.
-    const restoredDraftRef = useRef(draftForProfile(profileId));
+    const restoredDraftRef = useRef(formSeedForProfile(profileId));
     const draftReadyRef = useRef(false);
+    const bootJob = restoreGenerateSessionFromStorage();
+    const bootMine = !!(bootJob && String(bootJob.profileId) === String(profileId));
 
     const [profiles, setProfiles] = useState([]);
     const [profile, setProfile] = useState(null);
@@ -271,8 +307,13 @@ function ResumeGenerator() {
         () => restoredDraftRef.current?.jobDescription || ''
     );
     const [loading, setLoading] = useState(true);
-    const [generating, setGenerating] = useState(false);
-    const [result, setResult] = useState(() => restoredDraftRef.current?.result || null);
+    const [generating, setGenerating] = useState(
+        () => bootMine && bootJob.status === 'running' && bootJob.kind !== 'regenerate'
+    );
+    const [result, setResult] = useState(() => {
+        if (bootMine && bootJob.status === 'running') return null;
+        return restoredDraftRef.current?.result || null;
+    });
     // Live elapsed timer while generating / regenerating, plus last finished duration.
     const [genElapsedSec, setGenElapsedSec] = useState(0);
     const genStartedAtRef = useRef(null);
@@ -326,6 +367,7 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
     const [chatOpen, setChatOpen] = useState(false);
     const chatMessagesEndRef = useRef(null);
     const handleGenerateRef = useRef(null);
+    const applyGeneratePayloadRef = useRef(null);
     const bidderAutoGenRef = useRef(false);
     const bidderPayloadAppliedRef = useRef(false);
     /** Once true, bidder must never auto-start Customize Resume again this page load. */
@@ -379,7 +421,12 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
     );
 
     // Regenerate state (separate spinner so the main button is unaffected)
-    const [regenerating, setRegenerating] = useState(false);
+    const [regenerating, setRegenerating] = useState(
+        () => bootMine && bootJob.status === 'running' && bootJob.kind === 'regenerate'
+    );
+    const [bgGenerateJob, setBgGenerateJob] = useState(
+        () => (bootJob?.status === 'running' ? bootJob : null)
+    );
 
     // Tick a live stopwatch while generate / regenerate is in flight.
     useEffect(() => {
@@ -388,10 +435,8 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
             genStartedAtRef.current = null;
             return undefined;
         }
-        if (!genStartedAtRef.current) {
-            genStartedAtRef.current = Date.now();
-            setGenElapsedSec(0);
-        }
+        const session = getGenerateSession();
+        genStartedAtRef.current = session?.startedAt || genStartedAtRef.current || Date.now();
         const tick = () => {
             const started = genStartedAtRef.current || Date.now();
             setGenElapsedSec(Math.max(0, (Date.now() - started) / 1000));
@@ -400,6 +445,85 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
         const id = setInterval(tick, 100);
         return () => clearInterval(id);
     }, [generating, regenerating]);
+
+    // Reattach in-flight generate when returning to this page (or this profile).
+    useEffect(() => {
+        restoreGenerateSessionFromStorage();
+
+        const fillEmptyFromSnapshot = (snap) => {
+            if (!snap || typeof snap !== 'object') return;
+            if (snap.jobDescription) {
+                setJobDescription((prev) => (prev && String(prev).trim() ? prev : snap.jobDescription));
+            }
+            if (snap.companyName) {
+                setCompanyName((prev) => (prev && String(prev).trim() ? prev : snap.companyName));
+            }
+            if (snap.jobRole) {
+                setJobRole((prev) => (prev && String(prev).trim() ? prev : snap.jobRole));
+            }
+            if (snap.jobUrl) {
+                setJobUrl((prev) => (prev && String(prev).trim() ? prev : snap.jobUrl));
+            }
+            if (Array.isArray(snap.coreSkills) && snap.coreSkills.length) {
+                setCoreSkills((prev) => (Array.isArray(prev) && prev.length ? prev : snap.coreSkills));
+            }
+            if (snap.selectedFont) {
+                setSelectedFont((prev) => prev || snap.selectedFont);
+            }
+        };
+
+        // Immediate restore on mount (session still in memory after SPA nav).
+        const boot = getGenerateSession();
+        if (boot && String(boot.profileId) === String(profileIdRef.current)) {
+            fillEmptyFromSnapshot(boot.formSnapshot || getGenerateFormSnapshot());
+        }
+
+        return subscribeGenerateSession((j) => {
+            setBgGenerateJob(j?.status === 'running' ? j : null);
+            const mine = !!(j && String(j.profileId) === String(profileIdRef.current));
+            if (!j) {
+                setGenerating(false);
+                setRegenerating(false);
+                return;
+            }
+            if (!mine) {
+                setGenerating(false);
+                setRegenerating(false);
+                return;
+            }
+            if (j.status === 'running') {
+                setGenerating(j.kind !== 'regenerate');
+                setRegenerating(j.kind === 'regenerate');
+                fillEmptyFromSnapshot(j.formSnapshot);
+                return;
+            }
+            if (j.status === 'done' && j.result) {
+                applyGeneratePayloadRef.current?.(j.result, { kind: j.kind });
+                fillEmptyFromSnapshot(j.formSnapshot);
+                setGenerating(false);
+                setRegenerating(false);
+                clearGenerateSession();
+                return;
+            }
+            if (j.status === 'error') {
+                setError(j.errorMessage || 'Failed to generate resume.');
+                setGenerating(false);
+                setRegenerating(false);
+                clearGenerateSession();
+                return;
+            }
+            if (j.status === 'interrupted') {
+                setError(
+                    'CV generate stopped because the browser reloaded. Click Customize Resume to start again. '
+                    + 'You can open other pages while it runs — just stay in this tab (no refresh).'
+                );
+                fillEmptyFromSnapshot(j.formSnapshot);
+                setGenerating(false);
+                setRegenerating(false);
+                clearGenerateSession();
+            }
+        });
+    }, [profileId]);
 
     const formatDuration = (seconds) => {
         if (seconds == null || Number.isNaN(Number(seconds))) return null;
@@ -629,9 +753,9 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
     }, [profileId]);
 
     // Persist Generate form + CV preview so leaving the page does not wipe work.
+    // Keep writing while generating so company / JD / stacks survive leave/return.
     useEffect(() => {
         if (!draftReadyRef.current) return;
-        if (generating || regenerating) return;
         const hasContent = !!(
             (jobDescription && String(jobDescription).trim())
             || (companyName && String(companyName).trim())
@@ -640,6 +764,8 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
             || (Array.isArray(coreSkills) && coreSkills.length)
             || result
             || applicationId
+            || generating
+            || regenerating
         );
         if (!hasContent) return;
         writeGenerateDraft({
@@ -650,8 +776,11 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
             jobUrl,
             coreSkills,
             selectedFont,
-            result,
-            applicationId,
+            // Don't clobber a prior CV preview with null while a new run is in flight.
+            result: (generating || regenerating) ? (result || readGenerateDraft()?.result || null) : result,
+            applicationId: (generating || regenerating)
+                ? (applicationId || readGenerateDraft()?.applicationId || null)
+                : applicationId,
             chatMessages,
             coverLetterResult,
             detectedCompany
@@ -1004,6 +1133,106 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
     // Helper: treat anything that is not a positive integer as "missing".
     const isValidAppId = (v) => Number.isInteger(v) && v > 0;
 
+    const applyGeneratePayload = (data, { kind } = {}) => {
+        if (!data) return;
+        if (data.resume_html && !data.resume_content) data.resume_content = data.resume_html;
+        if (data.resume_content && !data.resume_html) data.resume_html = data.resume_content;
+        if (data.font_family && data.font_family !== '__random__') {
+            setSelectedFont(data.font_family);
+        }
+        if (kind === 'regenerate') {
+            setResult((prev) => ({
+                ...(prev || {}),
+                ...data,
+                resume_content: data.resume_html || data.resume_content,
+                resume_html: data.resume_html || data.resume_content,
+                preview_css: data.preview_css || prev?.preview_css || ''
+            }));
+        } else {
+            setResult(data);
+        }
+        if (data.company_name && data.company_name !== 'Unknown') {
+            setCompanyName((prev) => (prev && prev.trim() && prev !== 'Unknown' ? prev : data.company_name));
+        }
+        if (data.job_role) {
+            setJobRole((prev) => (prev && String(prev).trim() ? prev : data.job_role));
+        }
+        if (data.job_url) {
+            setJobUrl((prev) => (prev && String(prev).trim() ? prev : data.job_url));
+        }
+        if (data.job_description) {
+            setJobDescription((prev) => (prev && String(prev).trim() ? prev : data.job_description));
+        }
+        if (data.core_skills) {
+            const skillList = String(data.core_skills)
+                .split(/[,;|]/)
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (skillList.length) {
+                setCoreSkills((prev) => (Array.isArray(prev) && prev.length ? prev : skillList));
+            }
+        }
+        const resolvedId = isValidAppId(data.application_id) ? data.application_id : null;
+        if (resolvedId) {
+            setApplicationId(resolvedId);
+            applicationIdRef.current = resolvedId;
+            setResult((prev) => ({ ...(prev || {}), application_id: resolvedId }));
+        }
+        if (data.quality_report) {
+            writeCvQualityCache({
+                application_id: resolvedId || data.application_id,
+                company_name: data.company_name || companyName,
+                job_role: data.job_role || jobRole,
+                profile_id: profileId,
+                quality_report: data.quality_report
+            });
+        }
+        setTimeout(() => {
+            resumePreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
+        try {
+            sessionStorage.setItem('job_apply_bidder_show_preview', '1');
+        } catch (_) { /* ignore */ }
+        if (!data.validation?.pass) {
+            setError(
+                `Stack check noted issues after ${data.validation_attempts || 1} pass(es). `
+                + 'Preview below is still usable — click Regenerate if you want another draft.'
+            );
+        }
+        if (data.quality_report && !data.quality_report.pass) {
+            setError((prev) => {
+                const q = `CV quality ${data.quality_report.grade} (${data.quality_report.score}%): `
+                    + `${data.quality_report.critical_count || 0} critical issue(s). Open CV Quality report.`;
+                return prev ? `${prev} ${q}` : q;
+            });
+        }
+        if (!(data.resume_html || data.resume_content)) {
+            setError((prev) => prev || 'Generate finished but no resume HTML was returned. Try Regenerate.');
+        }
+        if (kind !== 'regenerate') {
+            try {
+                window.postMessage({
+                    type: 'JOB_APPLY_BIDDER_GENERATE_DONE',
+                    result: {
+                        application_id: resolvedId || data.application_id || null,
+                        resume_filename: data.resume_filename || null,
+                        resume_html: data.resume_html || data.resume_content || '',
+                        resume_content: data.resume_content || data.resume_html || '',
+                        company_name: companyName || data.company_name || '',
+                        job_role: jobRole || data.job_role || '',
+                        job_url: jobUrl || data.job_url || '',
+                        validation_pass: data.validation?.pass ?? null,
+                        is_finalized: !!(data.is_finalized || data.resume_filename),
+                        profile_id: parseInt(profileId, 10) || null
+                    }
+                }, '*');
+            } catch (bridgeErr) {
+                console.warn('[handleGenerate] extension notify failed', bridgeErr);
+            }
+        }
+    };
+    applyGeneratePayloadRef.current = applyGeneratePayload;
+
     const handleGenerate = async () => {
         const skills = Array.isArray(coreSkills)
             ? coreSkills
@@ -1022,14 +1251,13 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
             setError('Select a profile before generating');
             return;
         }
+        if (isGenerateRunning()) return;
 
         setError('');
-        setGenerating(true);
         setResult(null);
         setApplicationId(null);
         applicationIdRef.current = null;
 
-        // Prefill company from job URL when the field is still empty.
         let companyForRequest = (companyName || '').trim();
         if (!companyForRequest || /^unknown$/i.test(companyForRequest)) {
             const fromUrl = extractCompanyFromJobUrl(jobUrl);
@@ -1040,109 +1268,43 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
         }
 
         const activeProfileId = profileId;
-        try {
-            const response = await userAPI.generateResume(parseInt(activeProfileId, 10), jobDescription, {
-                company_name: companyForRequest,
-                job_role: jobRole,
-                core_skills: skills.join(', '),
-                job_url: jobUrl,
-                font_family: selectedFont
-            });
-            console.log('[handleGenerate] response', response.data);
-            const data = response.data || {};
-            // Ensure preview always has HTML even if one field is missing.
-            if (data.resume_html && !data.resume_content) data.resume_content = data.resume_html;
-            if (data.resume_content && !data.resume_html) data.resume_html = data.resume_content;
-            // Lock the font picker to the actual font used (so PDF/DOCX/preview match).
-            if (data.font_family && data.font_family !== '__random__') {
-                setSelectedFont(data.font_family);
-            }
-            setResult(data);
-            if (data.company_name && data.company_name !== 'Unknown') {
-                setCompanyName((prev) => (prev && prev.trim() && prev !== 'Unknown' ? prev : data.company_name));
-            }
-            if (data.job_role) {
-                setJobRole((prev) => prev || data.job_role);
-            }
-
-            let resolvedId = isValidAppId(data.application_id) ? data.application_id : null;
-            if (!resolvedId && data.resume_filename) {
-                try {
-                    const lookup = await userAPI.getApplicationByFilename(data.resume_filename);
-                    if (isValidAppId(lookup.data?.id)) {
-                        resolvedId = lookup.data.id;
+        startGenerateSession({
+            kind: 'generate',
+            profileId: activeProfileId,
+            formSnapshot: {
+                jobDescription,
+                companyName: companyForRequest || companyName,
+                jobRole,
+                jobUrl,
+                coreSkills: skills,
+                selectedFont
+            },
+            run: async () => {
+                const response = await userAPI.generateResume(parseInt(activeProfileId, 10), jobDescription, {
+                    company_name: companyForRequest,
+                    job_role: jobRole,
+                    core_skills: skills.join(', '),
+                    job_url: jobUrl,
+                    font_family: selectedFont
+                });
+                const data = response.data || {};
+                if (data.resume_html && !data.resume_content) data.resume_content = data.resume_html;
+                if (data.resume_content && !data.resume_html) data.resume_html = data.resume_content;
+                let resolvedId = isValidAppId(data.application_id) ? data.application_id : null;
+                if (!resolvedId && data.resume_filename) {
+                    try {
+                        const lookup = await userAPI.getApplicationByFilename(data.resume_filename);
+                        if (isValidAppId(lookup.data?.id)) {
+                            resolvedId = lookup.data.id;
+                        }
+                    } catch (lookupErr) {
+                        console.warn('[handleGenerate] by-filename lookup failed', lookupErr);
                     }
-                } catch (lookupErr) {
-                    console.warn('[handleGenerate] by-filename lookup failed', lookupErr);
                 }
+                if (resolvedId) data.application_id = resolvedId;
+                return data;
             }
-            if (resolvedId) {
-                setApplicationId(resolvedId);
-                applicationIdRef.current = resolvedId;
-                setResult(prev => ({ ...(prev || {}), application_id: resolvedId }));
-            }
-            if (data.quality_report) {
-                writeCvQualityCache({
-                    application_id: resolvedId || data.application_id,
-                    company_name: data.company_name || companyName,
-                    job_role: data.job_role || jobRole,
-                    profile_id: profileId,
-                    quality_report: data.quality_report
-                });
-            } else {
-                console.warn('[handleGenerate] could not resolve a valid application id');
-            }
-
-            // Scroll preview into view so the generated CV is visible.
-            setTimeout(() => {
-                resumePreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 150);
-            try {
-                sessionStorage.setItem('job_apply_bidder_show_preview', '1');
-            } catch (_) { /* ignore */ }
-
-            if (!data.validation?.pass) {
-                setError(
-                    `Stack check noted issues after ${data.validation_attempts || 1} pass(es). `
-                    + 'Preview below is still usable — click Regenerate if you want another draft.'
-                );
-            }
-            if (data.quality_report && !data.quality_report.pass) {
-                setError((prev) => {
-                    const q = `CV quality ${data.quality_report.grade} (${data.quality_report.score}%): `
-                        + `${data.quality_report.critical_count || 0} critical issue(s). Open CV Quality report.`;
-                    return prev ? `${prev} ${q}` : q;
-                });
-            }
-            if (!(data.resume_html || data.resume_content)) {
-                setError((prev) => prev || 'Generate finished but no resume HTML was returned. Try Regenerate.');
-            }
-
-            // Notify Chrome extension (same-page Greenhouse: answers + fill after CV).
-            try {
-                window.postMessage({
-                    type: 'JOB_APPLY_BIDDER_GENERATE_DONE',
-                    result: {
-                        application_id: resolvedId || data.application_id || null,
-                        resume_filename: data.resume_filename || null,
-                        resume_html: data.resume_html || data.resume_content || '',
-                        resume_content: data.resume_content || data.resume_html || '',
-                        company_name: companyName || data.company_name || '',
-                        job_role: jobRole || data.job_role || '',
-                        job_url: jobUrl || data.job_url || '',
-                        validation_pass: data.validation?.pass ?? null,
-                        is_finalized: !!(data.is_finalized || data.resume_filename),
-                        profile_id: parseInt(activeProfileId, 10) || null
-                    }
-                }, '*');
-            } catch (bridgeErr) {
-                console.warn('[handleGenerate] extension notify failed', bridgeErr);
-            }
-        } catch (error) {
-            setError(generateErrorMessage(error));
-        } finally {
-            setGenerating(false);
-        }
+        });
     };
     handleGenerateRef.current = handleGenerate;
 
@@ -1245,68 +1407,31 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
             setError('Please enter a job description');
             return;
         }
+        if (isGenerateRunning()) return;
 
         setError('');
-        setRegenerating(true);
-        try {
-            const response = await userAPI.regenerateResume({
-                application_id: idToUse || undefined,
-                resume_filename: filenameFallback || undefined,
-                job_description: jobDescription,
-                core_skills: coreSkills.join(', '),
-                font_family: selectedFont,
-            });
-            const data = response.data || {};
-            if (data.font_family && data.font_family !== '__random__') {
-                setSelectedFont(data.font_family);
-            }
-            setResult(prev => ({
-                ...(prev || {}),
-                ...data,
-                resume_content: data.resume_html || data.resume_content,
-                resume_html: data.resume_html || data.resume_content,
-                preview_css: data.preview_css || prev?.preview_css || ''
-            }));
-            if (isValidAppId(data.application_id)) {
-                setApplicationId(data.application_id);
-                applicationIdRef.current = data.application_id;
-            }
-            if (data.quality_report) {
-                writeCvQualityCache({
-                    application_id: data.application_id || applicationIdRef.current,
-                    company_name: data.company_name || companyName,
-                    job_role: data.job_role || jobRole,
-                    profile_id: profileId,
-                    quality_report: data.quality_report
+        startGenerateSession({
+            kind: 'regenerate',
+            profileId,
+            formSnapshot: {
+                jobDescription,
+                companyName,
+                jobRole,
+                jobUrl,
+                coreSkills: Array.isArray(coreSkills) ? coreSkills : [],
+                selectedFont
+            },
+            run: async () => {
+                const response = await userAPI.regenerateResume({
+                    application_id: idToUse || undefined,
+                    resume_filename: filenameFallback || undefined,
+                    job_description: jobDescription,
+                    core_skills: coreSkills.join(', '),
+                    font_family: selectedFont,
                 });
+                return response.data || {};
             }
-            if (data.company_name && data.company_name !== 'Unknown') {
-                setCompanyName((prev) => (prev && prev.trim() && prev !== 'Unknown' ? prev : data.company_name));
-            }
-            setTimeout(() => {
-                resumePreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 150);
-            if (!data.validation?.pass) {
-                setError(
-                    `Stack check noted issues after ${data.validation_attempts || 1} pass(es). `
-                    + 'Preview below is still usable — click Regenerate again if you want another draft.'
-                );
-            }
-            if (data.quality_report && !data.quality_report.pass) {
-                setError((prev) => {
-                    const q = `CV quality ${data.quality_report.grade} (${data.quality_report.score}%): `
-                        + `${data.quality_report.critical_count || 0} critical issue(s). Open CV Quality report.`;
-                    return prev ? `${prev} ${q}` : q;
-                });
-            }
-        } catch (error) {
-            console.error('[handleRegenerate] error', error);
-            const message = generateErrorMessage(error);
-            setError(message);
-            window.alert('Failed to regenerate resume: ' + message);
-        } finally {
-            setRegenerating(false);
-        }
+        });
     };
 
     const resetForNewApplication = () => {
@@ -1441,9 +1566,27 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
         }
     };
 
-    const downloadResume = (filename) => {
-        if (!filename) return;
-        window.open(`/resumes/${filename}`, '_blank');
+    const downloadResume = async (filename, meta = {}) => {
+        if (!filename && !meta.application_id) return;
+        try {
+            const params = {
+                filename: filename || undefined,
+                profile_id: meta.profile_id || profile?.id || profileId || undefined,
+                application_id: meta.application_id || result?.application_id || undefined,
+                company_name: meta.company_name || companyName || result?.company_name || '',
+                job_role: meta.job_role || jobRole || result?.job_role || '',
+                open: 1
+            };
+            await userAPI.downloadResumeFolder(params);
+            const qs = new URLSearchParams();
+            Object.entries(params).forEach(([k, v]) => {
+                if (v != null && v !== '' && k !== 'open') qs.set(k, String(v));
+            });
+            window.open(`/api/user/resume-folder?${qs.toString()}`, '_blank');
+        } catch (err) {
+            console.warn('Folder download failed, falling back to file:', err?.message || err);
+            if (filename) window.open(`/resumes/${filename}`, '_blank');
+        }
     };
 
     const pdfFilenameFromDocx = (docxFilename) => {
@@ -2080,7 +2223,7 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
                                 className="form-select h-10 min-w-[12rem] rounded-xl border border-white/10 bg-black/20 px-3 text-sm"
                                 value={profileId || ''}
                                 onChange={handleProfileSelect}
-                                disabled={generating || regenerating}
+                                disabled={generating || regenerating || isGenerateRunning()}
                             >
                                 <option value="">-- Switch Profile --</option>
                                 {profiles.map(p => (
@@ -2188,6 +2331,16 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
                     >
                         Jump to preview
                     </button>
+                </div>
+            )}
+            {bgGenerateJob?.status === 'running' && String(bgGenerateJob.profileId) !== String(profileId) && (
+                <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+                    A CV is still generating for another profile.
+                    {' '}
+                    <Link className="font-semibold underline" to={`/user/generate/${bgGenerateJob.profileId}`}>
+                        Open that generate page
+                    </Link>
+                    {' '}to watch it finish.
                 </div>
             )}
             <div className="jobright-workspace">
@@ -2701,7 +2854,7 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
                                 <Loader size="xl" />
                                 <p className="font-mono text-2xl tabular-nums">{formatDuration(genElapsedSec)}</p>
                                 <p className="text-xs text-muted-foreground">
-                                    Drafting CV…
+                                    Drafting CV… You can open other pages — this keeps running.
                                 </p>
                             </div>
                         )}
@@ -2728,6 +2881,9 @@ const [assignedTemplate, setAssignedTemplate] = useState(null);
                                                 <span className="ml-1">
                                                     · {result.quality_report.grade} ({result.quality_report.score}%)
                                                 </span>
+                                            )}
+                                            {markedGenerationTime(result) && (
+                                                <span className="ml-1 opacity-80">· {markedGenerationTime(result)}</span>
                                             )}
                                         </>
                                     ) : (

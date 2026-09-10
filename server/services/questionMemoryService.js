@@ -32,6 +32,7 @@ const KNOCKOUT_KINDS = new Set([
 const POLICY_KINDS = new Set([
     ...KNOCKOUT_KINDS,
     'salary_comfort_yes',
+    'skill_experience_yes',
     'onsite_hub_yes',
     'us_person_yes',
     'export_control_us_citizen',
@@ -40,7 +41,9 @@ const POLICY_KINDS = new Set([
     'veteran_status',
     'gender',
     'race_ethnicity',
-    'hispanic_latino'
+    'hispanic_latino',
+    'willing_to_relocate',
+    'willing_to_travel'
 ]);
 
 /** In-process embed cache: model|hash → Float32Array|number[] */
@@ -372,7 +375,7 @@ async function matchQuestion(questionText, { userId = null, kinds = null } = {})
             failure_code: 'gap_reject'
         };
     }
-    if (!POLICY_KINDS.has(kind) && !String(kind).startsWith('profile_')) {
+    if (!POLICY_KINDS.has(kind) && !String(kind).startsWith('profile_') && kind !== 'taught') {
         return { hit: false, reason: 'kind_not_allowlisted', kind, failure_code: 'policy_miss' };
     }
     if (!String(top.row.answer_text || '').trim()) {
@@ -402,9 +405,231 @@ async function matchQuestion(questionText, { userId = null, kinds = null } = {})
 
 function isEssayLike(answer) {
     const t = String(answer || '').trim();
-    if (t.length > 160) return true;
+    if (t.length > 220) return true;
     if ((t.match(/\./g) || []).length >= 2 && t.split(/\s+/).length > 40) return true;
     return false;
+}
+
+/** Parse "always pick Yes for relocation" / "Question => Answer" from a teach instruction. */
+function parseTeachInstruction(instruction, fallbackQuestion = '') {
+    const t = String(instruction || '').trim();
+    if (!t) return { question: String(fallbackQuestion || '').trim(), answer: '' };
+    let m = t.match(/^(.{8,240}?)\s*(?:=>|→|->)\s*(.{1,200})$/);
+    if (m) return { question: m[1].trim(), answer: m[2].trim() };
+    m = t.match(/always\s+(?:pick|answer|use|choose)\s+["']?(.+?)["']?\s+for\s+["']?(.+?)["']?\s*$/i);
+    if (m) return { question: m[2].trim(), answer: m[1].trim() };
+    m = t.match(/for\s+["'](.+?)["']\s*,?\s*(?:always\s+)?(?:pick|answer|use|choose)\s+["']?(.+?)["']?\s*$/i);
+    if (m) return { question: m[1].trim(), answer: m[2].trim() };
+    return { question: String(fallbackQuestion || '').trim(), answer: '', raw: t };
+}
+
+function answersAgree(taught, matched) {
+    const a = String(taught || '').trim().toLowerCase();
+    const b = String(matched || '').trim().toLowerCase();
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.length >= 3 && b.includes(a)) return true;
+    if (b.length >= 3 && a.includes(b)) return true;
+    return false;
+}
+
+function hostFromUrl(url) {
+    try {
+        return new URL(String(url || '')).hostname.replace(/^www\./i, '').toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
+function listUserBidSites(userId) {
+    const uid = parseInt(userId, 10);
+    if (!Number.isFinite(uid)) return [];
+    const byHost = new Map();
+    const add = (host) => {
+        const h = String(host || '').replace(/^www\./i, '').toLowerCase();
+        if (!h) return null;
+        if (!byHost.has(h)) byHost.set(h, { host: h, questions: [], course_count: 0 });
+        return byHost.get(h);
+    };
+    try {
+        const courses = getAll(
+            `SELECT job_url, answers_json FROM bid_courses WHERE user_id = ? ORDER BY id DESC`,
+            [uid]
+        );
+        for (const c of courses) {
+            const site = add(hostFromUrl(c.job_url));
+            if (!site) continue;
+            site.course_count += 1;
+            let answers = [];
+            try {
+                answers = JSON.parse(c.answers_json || '[]');
+            } catch {
+                answers = [];
+            }
+            if (!Array.isArray(answers)) continue;
+            for (const a of answers) {
+                const label = String(a?.label || a?.id || '').trim();
+                if (label) site.questions.push(label);
+            }
+        }
+    } catch (_) { /* ignore */ }
+    try {
+        const lessons = getAll(
+            `SELECT DISTINCT host FROM bidder_fill_lessons WHERE user_id = ?`,
+            [uid]
+        );
+        for (const row of lessons) add(row.host);
+    } catch (_) { /* table may not exist */ }
+    try {
+        const apps = getAll(
+            `SELECT DISTINCT a.job_url
+               FROM job_applications a
+               JOIN user_profile_assignments ua ON ua.profile_id = a.profile_id
+              WHERE ua.user_id = ?
+                AND a.job_url IS NOT NULL
+                AND TRIM(a.job_url) <> ''`,
+            [uid]
+        );
+        for (const row of apps) add(hostFromUrl(row.job_url));
+    } catch (_) { /* ignore */ }
+    return [...byHost.values()];
+}
+
+/**
+ * Rematch the taught question (and similar labels) on every site the user
+ * has already bid. Run this first, before Save / Update all.
+ */
+async function checkAllSites({ userId, question, answer } = {}) {
+    const q0 = String(question || '').trim();
+    const a0 = String(answer || '').trim();
+    const kind = q0 ? inferPolicyKind(q0) : null;
+    const sites = listUserBidSites(userId);
+    const out = [];
+    for (const site of sites) {
+        const seen = new Set();
+        const candidates = [];
+        const push = (text) => {
+            const t = String(text || '').trim();
+            const key = t.toLowerCase();
+            if (!t || seen.has(key)) return;
+            seen.add(key);
+            candidates.push(t);
+        };
+        if (q0) push(q0);
+        for (const label of site.questions) {
+            if (kind && inferPolicyKind(label) === kind) push(label);
+            else if (q0 && jaccard(q0, label) >= 0.28) push(label);
+        }
+        const toCheck = candidates.slice(0, 6);
+        const checks = [];
+        for (const q of toCheck) {
+            const m = await matchQuestion(q, { userId });
+            checks.push({
+                question: q,
+                hit: !!m.hit,
+                answer: m.answer || null,
+                reason: m.reason || null,
+                agrees: !!(m.hit && (!a0 || answersAgree(a0, m.answer)))
+            });
+        }
+        out.push({
+            host: site.host,
+            course_count: site.course_count,
+            checked: checks.length,
+            hits: checks.filter((c) => c.hit).length,
+            ok: checks.some((c) => c.agrees),
+            checks
+        });
+    }
+    return {
+        site_count: out.length,
+        sites_ok: out.filter((s) => s.ok).length,
+        sites: out
+    };
+}
+
+/**
+ * Save a user-taught answer from a bid course, then rematch so they can
+ * see whether learning stuck. Optional check_question re-tests a rephrase.
+ * Set checkAllSites to rematch against every host the user already bid.
+ */
+async function teachAndCheck({
+    userId = null,
+    question = '',
+    answer = '',
+    instruction = '',
+    checkQuestion = '',
+    save = true,
+    updateAll = false,
+    checkAllSites: doCheckAllSites = false,
+    isAdmin = false,
+    isManager = false
+} = {}) {
+    const parsed = parseTeachInstruction(instruction, question);
+    const q = String(question || parsed.question || '').trim();
+    const a = String(answer || parsed.answer || '').trim();
+    if (save && (!q || !a)) {
+        return {
+            ok: false,
+            reason: 'need_question_and_answer',
+            error: 'Enter the question and the answer you want next time (or an instruction like “always pick Yes for relocation”).'
+        };
+    }
+    let saved = null;
+    let kind = inferPolicyKind(q) || 'taught';
+    if (save) {
+        saved = upsertMemory({
+            userId,
+            kind,
+            questionText: q,
+            answerText: a,
+            source: 'course_teach',
+            knockout: KNOCKOUT_KINDS.has(kind)
+        });
+        if (!saved.ok) {
+            return {
+                ok: false,
+                reason: saved.reason,
+                error: saved.reason === 'unique_rejected' || saved.reason === 'essay_rejected'
+                    ? 'That looks like a unique essay — learning only stores short Policy/screening answers.'
+                    : saved.reason === 'kind_not_allowed'
+                        ? 'This question type cannot be stored in Policy memory.'
+                        : `Could not save (${saved.reason || 'error'}).`
+            };
+        }
+    }
+    const match = q ? await matchQuestion(q, { userId }) : { hit: false, reason: 'empty' };
+    const checkQ = String(checkQuestion || '').trim();
+    const check_again = checkQ ? await matchQuestion(checkQ, { userId }) : null;
+    const learned = !!(match?.hit && answersAgree(a || match.answer, match.answer));
+    const check_ok = check_again
+        ? !!(check_again.hit && answersAgree(a || match.answer, check_again.answer))
+        : null;
+    let update_all = null;
+    if (updateAll && a && kind) {
+        update_all = updateAllFromTaught({
+            userId,
+            kind,
+            answer: a,
+            isAdmin,
+            isManager
+        });
+    }
+    let sites = null;
+    if (doCheckAllSites && userId != null && q) {
+        sites = await checkAllSites({ userId, question: q, answer: a });
+    }
+    return {
+        ok: true,
+        saved,
+        taught: { question: q, answer: a, kind },
+        match,
+        check_again,
+        learned,
+        check_ok,
+        update_all,
+        sites
+    };
 }
 
 function upsertMemory({
@@ -424,12 +649,11 @@ function upsertMemory({
     if (!k && q) k = inferPolicyKind(q) || '';
     if (!k || !q || !a) return { ok: false, reason: 'missing_fields' };
     if (k === '_hard_negative') return { ok: false, reason: 'hard_neg' };
-    if (!POLICY_KINDS.has(k) && !k.startsWith('profile_')) {
+    if (!POLICY_KINDS.has(k) && !k.startsWith('profile_') && k !== 'taught') {
         return { ok: false, reason: 'kind_not_allowed' };
     }
     if (isEssayLike(a)) return { ok: false, reason: 'essay_rejected' };
-    if (/why (are you|do you)|interested in this|cover letter|tell me about a time/i.test(q)
-        && a.split(/\s+/).length > 25) {
+    if (/why (are you|do you)|interested in this|cover letter|tell me about a time/i.test(q)) {
         return { ok: false, reason: 'unique_rejected' };
     }
 
@@ -566,8 +790,14 @@ function inferPolicyKind(questionText) {
     if (/\b(work[\s_-]*auth|legally[\s_-]*authorized|eligible[\s_-]*to[\s_-]*work)\b/i.test(h)) {
         return 'work_authorization';
     }
-    if (/\b(have you (ever )?worked|former\b.{0,40}\bemployee|previously\s+worked)\b/i.test(h)) {
+    // Company / related company-or-role → No (before skill Yes).
+    if (/\b(are you a former\b|former\b.{0,40}\bemployee|employed by\b|previously\s+worked\s+(at|for|here|before)|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|(?:related|affiliate|subsidiary|sister|parent)\s+(?:company|employer|role|position)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer)|applied (?:here|before)|internal (?:candidate|employee))\b/i.test(h)) {
         return 'previous_employer_no';
+    }
+    // Stack / tech experience → Yes.
+    if (/\b((do you have|have you)\b.{0,120}\b(experience|worked with|familiar|proficien|hands[\s-]*on|knowledge)\b.{0,120}\b(python|java|javascript|typescript|react|sql|aws|azure|gcp|certificate|pki|x\.?509|security|api|rest|kubernetes|docker|devops|ml|ai)|experience\b.{0,40}\b(using|with)\b.{0,40}\b(python|java|react|sql|pki|certificate))\b/i.test(h)
+        && !/\b(sponsor|visa|disabilit|veteran|felony|describe|tell us)\b/i.test(h)) {
+        return 'skill_experience_yes';
     }
     if (/\b(comfortable|willing)\b.{0,80}\b(salary|compensation)\b/i.test(h)) return 'salary_comfort_yes';
     if (/\bbackground\s*check\b/i.test(h)) return 'background_check_yes';
@@ -576,7 +806,94 @@ function inferPolicyKind(questionText) {
         return 'sanctioned_countries_no';
     }
     if (/\b(18[\s_-]*or[\s_-]*older|over[\s_-]*18)\b/i.test(h)) return 'over_18';
+    if (/\b(veteran|protected veteran|military)\b/i.test(h)) return 'veteran_status';
+    if (/\b(hispanic|latino|latina|latinx)\b/i.test(h)) return 'hispanic_latino';
+    if (/\bgender\b|\bsex\b/i.test(h) && !/\bsexual\b/i.test(h)) return 'gender';
+    if (/\brelocat/i.test(h)) return 'willing_to_relocate';
+    if (/\btravel\b/i.test(h) && /\b(willing|able|ok|okay|open)\b/i.test(h)) return 'willing_to_travel';
     return null;
+}
+
+const KIND_TO_PROFILE_FIELD = {
+    requires_sponsorship: 'requires_sponsorship',
+    work_authorization: 'work_authorization',
+    disability_status: 'disability_status',
+    over_18: 'over_18',
+    veteran_status: 'veteran_status',
+    gender: 'gender',
+    race_ethnicity: 'race_ethnicity',
+    hispanic_latino: 'hispanic_latino',
+    willing_to_relocate: 'willing_to_relocate',
+    willing_to_travel: 'willing_to_travel'
+};
+
+/**
+ * Push a taught answer to every memory row of that kind, and to profile
+ * autofill columns (all profiles for admin, assigned profiles for others).
+ */
+function updateAllFromTaught({ userId, kind, answer, isAdmin = false, isManager = false } = {}) {
+    const a = String(answer || '').trim();
+    const k = String(kind || '').trim();
+    if (!k || !a) return { memory_updated: 0, profiles_updated: 0, field: null };
+
+    ensureQuestionMemoryTable();
+    const uid = userId != null ? parseInt(userId, 10) : null;
+    const matched = getOne(
+        `SELECT COUNT(*) AS c FROM bidder_question_memory
+          WHERE kind = ? AND kind <> '_hard_negative'
+            AND (user_id IS NULL OR user_id = ?)`,
+        [k, uid]
+    );
+    runQuery(
+        `UPDATE bidder_question_memory
+            SET answer_text = ?, source = 'course_teach_all', disabled = 0,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE kind = ? AND kind <> '_hard_negative'
+            AND (user_id IS NULL OR user_id = ?)`,
+        [a.slice(0, 500), k, uid]
+    );
+    try { saveDatabase(); } catch (_) { /* ignore */ }
+
+    let profiles_updated = 0;
+    const field = KIND_TO_PROFILE_FIELD[k] || null;
+    const allowedFields = new Set(Object.values(KIND_TO_PROFILE_FIELD));
+    if (field && allowedFields.has(field)) {
+        try {
+            const val = a.slice(0, 500);
+            let r;
+            if (isAdmin) {
+                r = runQuery(
+                    `UPDATE candidate_profiles SET ${field} = ?, updated_at = CURRENT_TIMESTAMP`,
+                    [val]
+                );
+            } else if (isManager && userId != null) {
+                r = runQuery(
+                    `UPDATE candidate_profiles SET ${field} = ?, updated_at = CURRENT_TIMESTAMP
+                      WHERE created_by = ?`,
+                    [val, parseInt(userId, 10)]
+                );
+            } else if (userId != null) {
+                r = runQuery(
+                    `UPDATE candidate_profiles SET ${field} = ?, updated_at = CURRENT_TIMESTAMP
+                      WHERE id IN (
+                          SELECT profile_id FROM user_profile_assignments WHERE user_id = ?
+                      )`,
+                    [val, parseInt(userId, 10)]
+                );
+            }
+            profiles_updated = r?.changes || 0;
+            try { saveDatabase(); } catch (_) { /* ignore */ }
+        } catch (err) {
+            console.warn('[teach] update-all profiles skipped:', err.message);
+        }
+    }
+
+    return {
+        memory_updated: Number(matched?.c || 0),
+        profiles_updated,
+        field,
+        kind: k
+    };
 }
 
 module.exports = {
@@ -586,10 +903,15 @@ module.exports = {
     backfillEmbeddings,
     matchQuestion,
     upsertMemory,
+    teachAndCheck,
+    checkAllSites,
+    parseTeachInstruction,
     listMemory,
     setDisabled,
     clearUserMemory,
     inferPolicyKind,
+    updateAllFromTaught,
+    KIND_TO_PROFILE_FIELD,
     normalizeQuestion,
     jaccard,
     cosine,

@@ -3,7 +3,7 @@
  * Used by the Chrome extension autofill (Mode 1) and Mode 2 prepare step.
  */
 const axios = require('axios');
-const { getAnswersProviderConfig, getAlternateMinimaxConfig, isMinimaxQuotaError, promoteMinimaxSlot, getAlternateGroqConfig, isGroqQuotaError, promoteGroqSlot, getAnswersGroqRescueConfig, getProviderConfig } = require('./settingsService');
+const { getAnswersProviderConfig, getAlternateMinimaxConfig, isMinimaxUnavailableError, promoteMinimaxSlot, getAlternateGroqConfig, isGroqQuotaError, isGroqAuthError, promoteGroqSlot, getAnswersGroqRescueConfig, getProviderConfig } = require('./settingsService');
 const { pickSalaryExpectation } = require('./salaryMatchService');
 const { getAll } = require('../config/database');
 const questionMemory = require('./questionMemoryService');
@@ -60,13 +60,18 @@ const FIXED_FIELD_RE = {
     security_clearance: /\b(security[\s_-]*clearance|clearance[\s_-]*level)\b/i,
     // Location selects — never send to LLM (profile city/state only)
     city: /\b(where (?:are|do) you (?:located|currently reside|live)|where are you located|current[\s_-]*location|where do you currently reside)\b/i,
-    state: /\b(^|\b)(state|province)\b(?![\s_-]*while)/i
+    state: /\b(^|\b)(state|province)\b(?![\s_-]*while)/i,
+    current_company: /\b(current[\s_-]*company|current[\s_-]*employer|present[\s_-]*employer|^company$)\b/i
 };
 
 /** Fixed answers that never go to the LLM (not profile columns). */
 const FIXED_CONSTANT_RE = {
+    // Company / employer / related company-or-role → always No (checked before skill Yes).
     previous_employer_no:
-        /\b(have you (ever )?worked|previously\s+worked|former\b.{0,48}\bemployee|are you a former\b|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(at|for)\b|ever\s+worked\s+(at|for)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i,
+        /\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|been employed by\b|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|previously\s+worked\s+(at|for|here|with\s+(us|this|our)|before)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer|organization|firm)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|(?:company|employer).{0,40}\brelated\b|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|employed by .{0,40} before)\b/i,
+    // Stack / tech / tool experience → Yes (not company employment).
+    skill_experience_yes:
+        /\b((do you have|have you)\b.{0,120}\b(deep\s+)?(hands[\s-]*on\s+)?(experience|worked with|familiar|proficien|knowledge|expertise)\b.{0,120}\b(using|with|in|of)?\b.{0,80}\b(python|java|javascript|typescript|react|node|golang|\.net|c\+\+|sql|aws|azure|gcp|kubernetes|docker|linux|api|rest|graphql|certificate|pki|x\.?509|machine identity|lifecycle|security|infrastructure|devops|terraform|ansible|spark|kafka|redis|mongo|postgres|ml|ai|llm|chatgpt)|experience\b.{0,60}\b(using|with|in)\b.{0,40}\b(python|java|javascript|typescript|react|sql|aws|certificate|pki|x\.?509|security|api|rest)|hands[\s-]*on.{0,40}\b(engineering|experience).{0,80}\b(certificate|pki|python|java|security|infrastructure))\b/i,
     onsite_hub_yes:
         /\bopen to working\b.{0,120}\b(office|hub|onsite|on[\s_-]*site)|\b\d+\s+days?\b.{0,60}\b(office|hub)|office hubs?\b/i,
     us_person_yes:
@@ -88,6 +93,7 @@ const FIXED_CONSTANT_RE = {
 
 const FIXED_CONSTANT_VALUE = {
     previous_employer_no: 'No',
+    skill_experience_yes: 'Yes',
     onsite_hub_yes: 'Yes',
     us_person_yes: 'Yes',
     export_control_us_citizen: 'U.S. Citizen',
@@ -161,6 +167,88 @@ function stripInventedEmployers(answer, allowed) {
  * Snap a free-text model answer onto an exact multiple-choice option.
  * Returns the best option string, or '' if nothing scores well.
  */
+function parseYearsWanted(answer) {
+    const raw = String(answer || '').trim().toLowerCase();
+    if (!raw) return NaN;
+    let m = raw.match(/(\d+)\s*\+/) || raw.match(/(\d+)\s*or more/) || raw.match(/more than\s*(\d+)/);
+    if (m) return parseInt(m[1], 10);
+    m = raw.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (m) return parseInt(m[2], 10); // use upper bound of wanted band
+    m = raw.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : NaN;
+}
+
+/** Parse ATS YoE option into {min,max}. "10+" → max Infinity; "0-2" → 0..2. */
+function parseYearsOptionRange(optionText) {
+    const t = String(optionText || '').toLowerCase().replace(/\s+/g, ' ');
+    if (!t) return null;
+    let m = t.match(/(\d+)\s*\+/) || t.match(/(\d+)\s*or more/) || t.match(/more than\s*(\d+)/) || t.match(/at least\s*(\d+)/);
+    if (m) {
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n)) return { min: n, max: Infinity };
+    }
+    m = t.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (m) {
+        return { min: parseInt(m[1], 10), max: parseInt(m[2], 10) };
+    }
+    m = t.match(/less than\s*(\d+)/);
+    if (m) return { min: 0, max: Math.max(0, parseInt(m[1], 10) - 1) };
+    m = t.match(/(\d+)\s*\+?\s*years?/);
+    if (m) {
+        const n = parseInt(m[1], 10);
+        return { min: n, max: n };
+    }
+    return null;
+}
+
+function scoreYearsOption(wantYears, optionText) {
+    if (!Number.isFinite(wantYears) || wantYears < 0) return -1;
+    const range = parseYearsOptionRange(optionText);
+    if (!range) return -1;
+    // Never pick a band whose ceiling is below the profile years (e.g. 15 → not 0-2).
+    if (Number.isFinite(range.max) && wantYears > range.max) return -1;
+    if (wantYears >= range.min && wantYears <= range.max) {
+        // Prefer tighter / higher bands when several fit (e.g. 10+ over 5-8 for want 12).
+        if (range.max === Infinity) return 98;
+        return 92;
+    }
+    // High experience → always prefer open-ended 10+ / 8+ style options.
+    if (wantYears >= 10 && range.max === Infinity && range.min >= 8) return 96;
+    if (wantYears >= 10 && range.max === Infinity) return 94;
+    return -1;
+}
+
+function pickBestYearsOption(wantYearsOrLabel, options) {
+    const opts = (options || [])
+        .map((o) => String(typeof o === 'string' ? o : (o?.label || o?.value || '')).trim())
+        .filter(Boolean);
+    if (!opts.length) return '';
+    const wantYears = typeof wantYearsOrLabel === 'number'
+        ? wantYearsOrLabel
+        : parseYearsWanted(wantYearsOrLabel);
+    let best = '';
+    let bestScore = -1;
+    for (const o of opts) {
+        const score = scoreYearsOption(wantYears, o);
+        if (score > bestScore) {
+            bestScore = score;
+            best = o;
+        }
+    }
+    // Profile years unknown — still never default to the lowest band; prefer 10+ / highest.
+    if (!best && !Number.isFinite(wantYears)) {
+        best = opts.find((o) => /10\s*\+|10\s*or more|more than\s*10/i.test(o))
+            || opts.find((o) => parseYearsOptionRange(o)?.max === Infinity)
+            || '';
+    }
+    if (!best && Number.isFinite(wantYears) && wantYears >= 10) {
+        best = opts.find((o) => /10\s*\+|10\s*or more|more than\s*10/i.test(o))
+            || opts.find((o) => parseYearsOptionRange(o)?.max === Infinity)
+            || '';
+    }
+    return best;
+}
+
 function snapAnswerToOptions(answer, options) {
     const opts = (options || [])
         .map((o) => String(typeof o === 'string' ? o : (o?.label || o?.value || '')).trim())
@@ -168,8 +256,20 @@ function snapAnswerToOptions(answer, options) {
     if (!opts.length) return String(answer || '').trim();
     const raw = String(answer || '').trim();
     const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const looksDisability = opts.some((o) => /disabilit/i.test(o));
+    // Require "year" in the option text — bare "5+" is employer-count, not YoE.
+    const looksYoe = opts.some((o) => /\byears?\b/i.test(o) && !!parseYearsOptionRange(o));
     const looksYesNo = opts.some((o) => /^(yes|no)\b/i.test(o) || /\b(agree|acknowledge|consent)\b/i.test(o));
     if (!raw) {
+        // Disability empty → No (never first-option Yes).
+        if (looksDisability) {
+            return opts.find((o) =>
+                /do not have|don'?t have|have not had|no disability|^no\b/i.test(o)
+                && !(/^yes\b/i.test(o) && /have a disability/i.test(o))
+            ) || '';
+        }
+        // YoE empty → leave blank (caller uses profile years); never opts[0] (0-2).
+        if (looksYoe) return '';
         // Empty model answer: only auto-pick Yes/Agree on Yes/No-style menus.
         // Never force "Yes" onto numeric / ranking menus (employer count, high school, etc.).
         if (looksYesNo) {
@@ -187,7 +287,34 @@ function snapAnswerToOptions(answer, options) {
     for (const o of opts) {
         if (norm(o) === w) return o;
     }
-    // Bare Yes / Agree → Affirmative option that actually exists (never invent "Yes").
+    // Disability: hard lock No answers onto No options (never Yes via fuzzy).
+    if (looksDisability || /disabilit/i.test(raw)) {
+        const wantNo = /do not have|don'?t have|have not had|no disability|^no\b/i.test(raw)
+            && !(/^yes\b/i.test(raw) && /have a disability/i.test(raw));
+        if (wantNo) {
+            return opts.find((o) =>
+                /do not have|don'?t have|have not had|no disability|^no\b/i.test(o)
+                && !( /^yes\b/i.test(o) && /have a disability/i.test(o))
+            ) || '';
+        }
+    }
+    // Skill-level menus (REST / Python / AI): never keep "No experience" / academic-only / 0–2
+    // when a production / Built / Extensively / Yes option exists.
+    const looksSkillLevel = opts.some((o) =>
+        /built and maintained|no experience|only academic|extensively|currently maintain|0\s*[-–]\s*[12]|less than\s*[12]/i.test(o)
+    );
+    if (looksSkillLevel) {
+        const weakAns = /no experience|not at all|never used|only academic|^no\b|0\s*[-–]\s*[12]|less than\s*[12]|zero\b/i.test(raw);
+        const strong = opts.find((o) => /built and maintained/i.test(o))
+            || opts.find((o) => /^yes\b/i.test(o) && /production|currently|past/i.test(o) && !/only academic/i.test(o))
+            || opts.find((o) => /extensively/i.test(o))
+            || opts.find((o) => /\d+\s*\+\s*years?|10\+|7\s*[-–]\s*10|5\s*\+/i.test(o)
+                && !/0\s*[-–]|less than/i.test(o))
+            || opts.find((o) => /^yes\b/i.test(o) && !/only academic|no experience/i.test(o));
+        if (strong && (weakAns || !raw)) return strong;
+        if (strong && /\d+\s*\+?\s*years?|expert|advanced|proficient|extensive/i.test(raw)) return strong;
+    }
+    // Bare Yes / Agree / No BEFORE YoE — "Yes" must not snap onto "5+" employer counts.
     if (/^(yes|y)$/i.test(raw) || /^(i\s+)?(agree|acknowledge|consent)\b/i.test(raw)) {
         const affirm = opts.find((o) => /^(yes|y)\b/i.test(o) && !/\b(no|not)\b/i.test(o))
             || opts.find((o) => /\bi\s+agree\b/i.test(o) && !/\b(do\s+not|don't|disagree)\b/i.test(o))
@@ -203,6 +330,12 @@ function snapAnswerToOptions(answer, options) {
             || opts.find((o) => /\b(do\s+not|don't|disagree|decline|refuse)\b/i.test(o));
         if (neg) return neg;
         return '';
+    }
+    // Years-of-experience bands: map profile years → containing option (never 0-2 for 15+).
+    const answerLooksYoe = /\d/.test(raw) || /\byears?\b/i.test(raw) || /\+|or more|less than/i.test(raw);
+    if (looksYoe && answerLooksYoe) {
+        const yoeHit = pickBestYearsOption(raw, opts);
+        if (yoeHit) return yoeHit;
     }
     // Answer is a short prefix of an option (or vice versa)
     let best = null;
@@ -241,6 +374,12 @@ function snapAnswerToOptions(answer, options) {
         }
         if (/top\s*5|excellent|outstanding/i.test(w)) {
             if (/top\s*5\s*%/i.test(t) || /excellent|outstanding/i.test(t)) score = Math.max(score, 95);
+        }
+        // Token "years" alone must not rank 0-2 equal to 10+.
+        if (looksYoe) {
+            const yScore = scoreYearsOption(parseYearsWanted(raw), o);
+            if (yScore >= 0) score = Math.max(score, yScore);
+            else if (/\d/.test(t) && Number.isFinite(parseYearsWanted(raw))) score = -1;
         }
         if (score > bestScore) {
             bestScore = score;
@@ -283,7 +422,9 @@ function fixedConstantKind(q) {
         'non_compete_no',
         'onsite_hub_yes',
         'us_person_yes',
+        // Company / related employer first → No; then stack/skill → Yes.
         'previous_employer_no',
+        'skill_experience_yes',
         'export_control_us_citizen',
         'immigration_na_if_citizen',
         'sanctioned_countries_no'
@@ -344,6 +485,26 @@ function classifyAnswerLane(q) {
         return { lane: 'unique', kind: `unique_${sub}`, unique_subtype: sub };
     }
     return { lane: 'written', kind: null };
+}
+
+const KNOWN_FIELD_TYPES = new Set([
+    'text', 'textarea', 'select', 'radio', 'checkbox', 'yesno', 'boolean',
+    'email', 'tel', 'phone', 'url', 'number', 'search', ''
+]);
+
+/**
+ * New / unclassified question type → Groq (MiniMax stays on known lanes).
+ * Written + no kind = studying engine does not recognize the type.
+ * Exotic ATS input types (date, file, unknown, …) also count as new.
+ */
+function isNewQuestionType(q) {
+    const type = String(q?.type || q?.input_type || '').toLowerCase().trim();
+    if (type && !KNOWN_FIELD_TYPES.has(type)) return true;
+    const lane = String(q?.lane || '').toLowerCase();
+    if (lane === 'unique' || lane === 'policy' || lane === 'profile' || lane === 'salary') {
+        return false;
+    }
+    return !q?.kind;
 }
 
 function tokenSet(text) {
@@ -456,7 +617,7 @@ function fixedProfileKind(q) {
         'school', 'discipline', 'degree', 'education_level',
         'over_18', 'preferred_name', 'portfolio_url', 'website_url',
         'race_ethnicity', 'gender', 'birthdate', 'todays_date',
-        'city', 'state'
+        'city', 'state', 'current_company'
     ];
     for (const kind of order) {
         if (!FIXED_FIELD_RE[kind]?.test(hay)) continue;
@@ -518,6 +679,17 @@ function fixedProfileValue(kind, profile) {
     }
     if (kind === 'disability_status') {
         return 'No, I do not have a disability';
+    }
+    if (kind === 'current_company') {
+        const direct = String(
+            profile.current_company || profile.current_employer || profile.company || ''
+        ).trim();
+        if (direct && !/^unknown$/i.test(direct)) return direct.slice(0, 80);
+        const hay = `${profile.work_experience || ''}\n${profile.experience || ''}\n${profile.summary || ''}`;
+        const atMatch = hay.match(/\bat\s+([A-Z][A-Za-z0-9&.,'’\- ]{1,50}?)(?:\s+in\s+|\s+[—–\-]\s+|\s*\(|\s*$)/m);
+        if (atMatch && atMatch[1]) return atMatch[1].trim().replace(/\s+/g, ' ').slice(0, 80);
+        const allowed = extractAllowedEmployers(hay);
+        return (allowed[0] || '').slice(0, 80);
     }
     if (kind === 'work_authorization') {
         const raw = String(profile.work_authorization || '').trim();
@@ -621,7 +793,16 @@ function polishWrittenAnswer(text, { companyName: co = '', jobRole: role = '', s
         .replace(/\s*I(?:'d| would) like to contribute\b[^.!?]*[.!?]?/gi, '')
         .replace(/\s*has the potential to\b[^.!?]*[.!?]?/gi, '')
         .replace(/\b(thrilled|passionate|excited) about (?:the )?opportunity\b[^.!?]*[.!?]?/gi, '')
-        .replace(/\s*[—–]+\s*/g, ', ')
+        // Strip markdown / AI formatting so answers look human-typed.
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/__([^_]+)__/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/_([^_]+)_/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/^\s*[-*+]\s+/gm, '')
+        .replace(/^\s*\d+\.\s+/gm, '')
+        .replace(/\s*[—–―−]+\s*/g, ', ')
         .replace(/\s{2,}/g, ' ')
         .replace(/\s+([,.])/g, '$1')
         .replace(/,\s*,/g, ',')
@@ -643,12 +824,15 @@ function polishWrittenAnswer(text, { companyName: co = '', jobRole: role = '', s
         t = `Most of my recent work has been ${built}. ${who}${roleBit}, especially ${interest}, is the problem space I want next.`;
     }
 
-    if (shortForm) {
+    // Always keep answers short and form-like (even outside bidderMode).
+    {
         const words = t.split(/\s+/).filter(Boolean);
         const sentences = t.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
-        if (words.length > 70 || sentences.length > 2) {
-            const keep = sentences.slice(0, 2).join(' ');
-            t = keep || words.slice(0, 55).join(' ');
+        const maxWords = shortForm ? 55 : 60;
+        const maxSentences = 2;
+        if (words.length > maxWords || sentences.length > maxSentences) {
+            const keep = sentences.slice(0, maxSentences).join(' ');
+            t = keep || words.slice(0, Math.min(48, maxWords)).join(' ');
             if (t && !/[.!?]"?$/.test(t)) t += '.';
         }
     }
@@ -753,7 +937,9 @@ async function generateApplicationAnswers({
             const pick = pickSalaryExpectation({
                 jobDescription,
                 profileSalaryRange: profile?.salary_range || '',
-                fieldLabel: q.label || q.id || ''
+                fieldLabel: q.label || q.id || '',
+                jobRole: jobRole || '',
+                companyName: companyName || ''
             });
             if (pick?.formatted) {
                 const val = Number(pick.value);
@@ -851,7 +1037,7 @@ async function generateApplicationAnswers({
             } catch (_) { /* fall through to LLM */ }
         }
 
-        toAnswer.push({
+        const drafted = {
             id: String(q.id || q.label).slice(0, 120),
             label: String(q.label || q.id).slice(0, 400),
             type: q.type || 'text',
@@ -865,7 +1051,9 @@ async function generateApplicationAnswers({
                     .filter(Boolean)
                     .slice(0, 24)
                 : []
-        });
+        };
+        drafted.new_type = isNewQuestionType(drafted);
+        toAnswer.push(drafted);
     }
 
     if (!toAnswer.length) {
@@ -920,14 +1108,15 @@ async function generateApplicationAnswers({
     ].filter(Boolean).join('\n');
 
     const lengthBlock = bidderMode
-        ? `LENGTH (Bidder — short human form answers, NOT essays):
+        ? `LENGTH (Bidder — shortest clear human answers, NOT essays):
 - Yes/No ONLY when the question is clearly binary (authorized? sponsorship? agree?). Answer "Yes" or "No" alone.
 - MULTIPLE-CHOICE / RADIO: when OPTIONS are listed, copy ONE option EXACTLY (same spelling/punctuation). Do not paraphrase. Do not write an essay.
 - NEVER answer only "Yes" or "No" to "describe / provide an example / explain" free-text questions (no OPTIONS).
 - Status / N/A follow-ups → "N/A" or one short phrase.
-- One-line fields → under ~12 words.
-- "Why this company/role" / experience / open text → prefer 1–2 short sentences (about 25–55 words). One sentence when enough. Sound like a person typing into a form, not a cover letter or ChatGPT essay.
-- Never pad with buzzwords. Never write more than 70 words for any single answer.
+- One-line fields → under ~10 words.
+- "Why this company/role" / experience / open text → 1 short sentence when enough, else 2 (about 18–40 words total). Hard cap 50 words.
+- Unique to THIS profile + THIS CV + THIS JD. Never reuse another candidate's phrasing.
+- Never pad with buzzwords. Never write more than 50 words for any single answer.
 - Mirror true JD keywords naturally; never invent employers or metrics.
 
 COMPOUND / DOUBLE QUESTIONS (same field — answer ALL parts in one string):
@@ -938,22 +1127,23 @@ COMPOUND / DOUBLE QUESTIONS (same field — answer ALL parts in one string):
 - Two open asks → one tight sentence each. No essay.
 - Dual Yes/No with OPTIONS → pick the listed option that covers both when possible; otherwise one short line answering both.
 - Still one id → one answer string. Do not invent a second field.`
-        : `LENGTH (strict):
+        : `LENGTH (strict — shortest clear human answers):
 - Yes/No ONLY when the question is clearly binary (authorized? sponsorship? agree?). Answer "Yes" or "No" alone.
 - MULTIPLE-CHOICE / RADIO: when OPTIONS are listed, copy ONE option EXACTLY (same spelling/punctuation). Do not paraphrase.
 - NEVER answer only "Yes" or "No" to "describe / provide an example / explain" free-text questions (no OPTIONS) — write 1–2 real sentences.
 - Status / N/A follow-ups → "N/A" or one short phrase.
-- One-line fields → under ~12 words.
-- "Why this company/role" / open text → exactly 1–2 natural sentences (about 28–50 words). Complete thoughts, not fragments.
-- Shortest answer that still sounds human and job-specific.`;
+- One-line fields → under ~10 words.
+- "Why this company/role" / open text → 1–2 natural sentences (about 18–40 words). Hard cap 50 words.
+- Unique to THIS profile + THIS CV + THIS JD. Shortest answer that still sounds human and job-specific.`;
 
-    const systemPrompt = `You write short job-application form answers in the candidate's voice: a real person typing into a web form — never like an AI assistant, never like a polished cover letter.
+    const systemPrompt = `You write the shortest clear job-application form answers in the candidate's voice: a real person typing into a web form — never like an AI assistant, never like a polished cover letter.
 
-Voice: calm, direct, specific, professional. Plain English. Contractions speech is OK when natural ("I've", "I'm"). Not slangy, not corporate-AI, not a resume keyword dump.
+Voice: calm, direct, specific, professional. Plain English only. Contractions speech is OK when natural ("I've", "I'm"). Not slangy, not corporate-AI, not a resume keyword dump.
 
 SOUND HUMAN (critical):
-- Prefer concrete facts over polished rhetoric.
-- Do NOT write multi-paragraph essays. Prefer one to two short sentences for open text${bidderMode ? ' (three only if a compound question needs both parts)' : ''}.
+- Prefer concrete facts from THIS candidate's GENERATED RESUME + PROFILE + WORK HISTORY, aimed at THIS JOB DESCRIPTION.
+- Every open-text answer must be unique to this profile and this JD — if another candidate could paste the same line, rewrite.
+- Do NOT write multi-paragraph essays. Prefer one short sentence; two only when needed${bidderMode ? ' (three only if a compound question needs both parts)' : ''}.
 - Do NOT start with "As a …", "With a background in …", "I am a [title] with X years…", or "I am writing to…".
 - Do NOT use generic praise, skill laundry lists, or resume-dump openings.
 - Do NOT use parallel buzzword stacks or "passionate / excited / thrilled / leverage / cutting-edge / innovative team".
@@ -970,15 +1160,17 @@ MULTIPLE CHOICE (critical):
 - For language / skill radios, pick the one language/skill that is strongest on the resume among the listed options.
 - Never invent a new option. Never answer with a paragraph when options exist.
 
-PUNCTUATION:
-- Never use long dashes (em dash — or en dash –). Use a period, comma, or plain hyphen (-) only if needed.
+FORMATTING (critical — answers must look human-typed):
+- Plain text only. Never use markdown, bold (**text**), italics, bullets, numbered lists, headings (#), or code backticks.
+- Never use long dashes (em dash — or en dash – or ―). Use a period, comma, or plain hyphen (-) only if needed.
 - Prefer two short sentences over one sentence with a dash.
+- No emoji. No ALL CAPS emphasis.
 
 ${lengthBlock}
 
 UNIQUENESS (critical for "why" / interest questions):
-- Locked to THIS company + THIS role + THIS JD. If swapping the company name still works, rewrite; too generic.
-- Use 1 concrete JD hook + 1 true resume fact.
+- Locked to THIS company + THIS role + THIS JD + THIS profile's resume. If swapping the company name or candidate still works, rewrite; too generic.
+- Use 1 concrete JD hook + 1 true resume fact from THIS CV only.
 - Do NOT dump stacks ("Python, APIs, Postgres…"). At most one skill inside a real sentence.
 - Do NOT copy example wording below. Write fresh sentences from THIS JD + resume only.
 
@@ -989,8 +1181,9 @@ BAD:
 "Texas" (as a standalone answer to a rationale/evidence question)
 "At Google, I led…" (when Google is not on the resume)
 "Yes" (alone, when the label also asks you to describe or explain)
+"**Reliability** — I owned on-call…" (markdown / long dash)
 
-GOOD pattern (structure only — write fresh words for THIS job):
+GOOD pattern (structure only — write fresh words for THIS job and THIS profile):
 "Most of my recent work was reliability tooling for production systems. [Company]'s [one duty from JD] matches what I want next."
 
 GOOD compound pattern:
@@ -1002,8 +1195,8 @@ CONTENT:
 3. If a company is not in ALLOWED EMPLOYERS, do not write its name — describe the work without naming a fake employer.
 4. Do NOT answer salary / pay; those are filled separately.
 5. EEO demographics (gender, disability, veteran, race/ethnicity) → return "" (filled from profile elsewhere). Work authorization, sponsorship, prior employer at company, over-18, relocate, how-heard, years of experience → answer from PROFILE facts as Yes/No or an exact OPTIONS string when listed.
-6. Fresh wording every time. Never reuse another application's phrasing.
-7. Ban: "I am drawn to", "particularly impressed", "leverage", "cutting-edge", "passionate about", "seamless", "thrilled", "as a [title] with experience in", "skills align", "opportunity to contribute", "dynamic team", "excited about the opportunity", "in today's fast-paced", "I am a [title] with", and long dashes.
+6. Fresh wording every time. Never reuse another application's or another profile's phrasing.
+7. Ban: "I am drawn to", "particularly impressed", "leverage", "cutting-edge", "passionate about", "seamless", "thrilled", "as a [title] with experience in", "skills align", "opportunity to contribute", "dynamic team", "excited about the opportunity", "in today's fast-paced", "I am a [title] with", long dashes, and markdown/bold.
 8. If ANSWER STYLE is provided, match brevity/tone only.
 9. Non-empty answers for every id except fixed-profile skips (""). For OPTIONS questions, non-empty means an exact option string.
 10. Return ONLY valid JSON: {"answers":[{"id":"...","answer":"..."}]}`;
@@ -1046,7 +1239,9 @@ QUESTIONS (answer ALL ids):
 ${JSON.stringify(questionList, null, 2)}`;
 
     let provider = getAnswersProviderConfig();
-    // Prefer MiniMax highspeed only when answers actually run on MiniMax.
+    const answersOnGroq = provider.provider === 'groq';
+    // Prefer MiniMax highspeed only when answers actually run on MiniMax
+    // (ANSWERS_PROVIDER=minimax override). Autofill default is Groq-only.
     if (provider.provider === 'minimax' && !/highspeed/i.test(String(provider.model || ''))) {
         try {
             provider = getProviderConfig('minimax', { model: 'MiniMax-M2.7-highspeed' });
@@ -1081,22 +1276,23 @@ ${JSON.stringify(questionList, null, 2)}`;
 
     function trackAnswersUsage(response, cfg) {
         try {
-            const { recordMinimaxResponse, currentUsageContext } = require('./aiUsageService');
+            const { recordAiResponse, currentUsageContext } = require('./aiUsageService');
             const ctx = currentUsageContext();
             const kind = bidderMode ? 'bidder' : (ctx.kind || 'answers');
-            recordMinimaxResponse(response, {
+            recordAiResponse(response, {
                 provider: cfg?.provider || provider.provider,
                 model: cfg?.model || provider.model,
                 kind,
                 userId: userId || ctx.userId,
-                profileId: profile?.id || ctx.profileId
+                profileId: profile?.id || ctx.profileId,
+                keySlot: cfg?.groq_key_slot || cfg?.minimax_key_slot || null
             });
         } catch (_) { /* ignore */ }
     }
 
     /**
-     * MiniMax first (key rotate on quota). Groq only when MiniMax cannot
-     * (quota exhausted / hard API failure) — rescue path for bidding.
+     * MiniMax first (rotate Key 1/2 on quota). Any MiniMax failure
+     * (timeout, 401, 413, 5xx, Akamai) → Groq. Groq rotates on quota/401.
      */
     async function runWithQuotaFallback(questionList, opts) {
         const triedKeys = new Set();
@@ -1115,13 +1311,14 @@ ${JSON.stringify(questionList, null, 2)}`;
                     || err.response?.data?.base_resp?.status_msg
                     || err.message;
 
-                if (provider.provider === 'minimax' && isMinimaxQuotaError(err)) {
+                if (provider.provider === 'minimax') {
                     const alt = getAlternateMinimaxConfig(provider.minimax_key_slot, {
                         model: provider.model
                     });
                     if (alt?.apiKey && !triedKeys.has(alt.apiKey)) {
                         console.warn(
-                            `[answers] MiniMax Key ${provider.minimax_key_slot} rate/quota limited; ` +
+                            `[answers] MiniMax Key ${provider.minimax_key_slot} failed ` +
+                            `(${err.upstreamStatus || err.code || 'error'}); ` +
                             `retrying with Key ${alt.minimax_key_slot}`
                         );
                         try { promoteMinimaxSlot(alt.minimax_key_slot); } catch (_) { /* ignore */ }
@@ -1130,29 +1327,27 @@ ${JSON.stringify(questionList, null, 2)}`;
                     }
                 }
 
-                // MiniMax cannot continue → Groq rescue (new/hard path).
-                const minimaxHardFail = provider.provider === 'minimax' && (
-                    isMinimaxQuotaError(err)
-                    || err.upstreamStatus === 400
-                    || err.upstreamStatus === 500
-                    || err.upstreamStatus === 502
-                    || err.upstreamStatus === 503
-                );
-                if (minimaxHardFail && !triedGroqRescue) {
+                if (provider.provider === 'minimax' && !triedGroqRescue) {
                     const groq = getAnswersGroqRescueConfig();
                     if (groq?.apiKey && !triedKeys.has(groq.apiKey)) {
-                        console.warn('[answers] MiniMax cannot complete; rescuing with Groq');
+                        console.warn(
+                            `[answers] MiniMax not working (${err.upstreamStatus || err.code || err.message}); ` +
+                            `autofill/bidder rescuing with Groq Key ${groq.groq_key_slot}`
+                        );
                         triedGroqRescue = true;
                         provider = groq;
                         continue;
                     }
                 }
 
-                if (provider.provider === 'groq' && isGroqQuotaError(err)) {
+                if (
+                    provider.provider === 'groq'
+                    && (isGroqQuotaError(err) || isGroqAuthError(err) || isMinimaxUnavailableError(err))
+                ) {
                     const alt = getAlternateGroqConfig(provider.groq_key_slot);
                     if (alt?.apiKey && !triedKeys.has(alt.apiKey)) {
                         console.warn(
-                            `[answers] Groq Key ${provider.groq_key_slot} rate/quota limited; ` +
+                            `[answers] Groq Key ${provider.groq_key_slot} failed; ` +
                             `retrying with Key ${alt.groq_key_slot}`
                         );
                         try { promoteGroqSlot(alt.groq_key_slot); } catch (_) { /* ignore */ }
@@ -1284,7 +1479,7 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                     let polished = polishWrittenAnswer(text, {
                         companyName,
                         jobRole,
-                        shortForm: !!bidderMode
+                        shortForm: true
                     });
                     const qMeta = toAnswer.find((q) => String(q.id) === String(row.id));
                     polished = rejectBareYesNoEssay(qMeta?.label || '', polished);
@@ -1400,7 +1595,7 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                     let text = polishWrittenAnswer(String(row.answer ?? '').trim(), {
                         companyName,
                         jobRole,
-                        shortForm: !!bidderMode
+                        shortForm: true
                     });
                     text = rejectBareYesNoEssay(qMeta?.label || '', text);
                     text = rejectBareStateEssay(qMeta?.label || '', text);
@@ -1421,7 +1616,7 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                 let polished = polishWrittenAnswer(text, {
                     companyName,
                     jobRole,
-                    shortForm: !!bidderMode
+                    shortForm: true
                 });
                 polished = rejectBareYesNoEssay(qMeta?.label || '', polished);
                 polished = rejectBareStateEssay(qMeta?.label || '', polished);
@@ -1456,9 +1651,22 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                 }
             }
             if (/year|experience/.test(label)) {
-                const yoe = String(profile.years_of_experience || '').trim();
-                const snapped = snapAnswerToOptions(yoe || '10+', opts);
+                const yoeLabel = yearsExperienceFillValueServer(profile)
+                    || String(profile.years_of_experience || '').trim()
+                    || '10+';
+                const snapped = pickBestYearsOption(yoeLabel, opts)
+                    || snapAnswerToOptions(yoeLabel, opts);
                 if (snapped) return snapped;
+                // Never fall through to opts[0] (that picked "0-2 years" for senior profiles).
+                return '';
+            }
+            if (/\bdisabilit/i.test(label)) {
+                const noOpt = opts.find((o) =>
+                    /do not have|don'?t have|have not had|no disability|^no\b/i.test(o)
+                    && !( /^yes\b/i.test(o) && /have a disability/i.test(o))
+                );
+                if (noOpt) return noOpt;
+                return '';
             }
             if (/how many companies|companies have you worked|number of companies/.test(label)) {
                 const n = String(Math.max(1, Math.min(8, Number(profile.employer_count) || 2)));
@@ -1479,6 +1687,10 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
             if (/agree|acknowledg|consent|plagiarism|own words|data protection|privacy/.test(label)) {
                 const agree = snapAnswerToOptions('I agree', opts) || snapAnswerToOptions('Yes', opts);
                 if (agree) return agree;
+            }
+            // Never default to first option for EEO / YoE / screening radios.
+            if (/\b(disabilit|veteran|gender|race|ethnicity|hispanic|sponsor|authoriz|year|experience)\b/i.test(label)) {
+                return '';
             }
             return opts.find((o) => !/^select/i.test(o) && !/^choose/i.test(o)) || opts[0];
         }
@@ -1530,61 +1742,130 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
         return '';
     }
 
-    let byId = new Map();
-    try {
-        const response = await runWithQuotaFallback(toAnswer, { missingOnly: false });
-        byId = parseAnswerMap(response);
-    } catch (err) {
-        console.warn('[answers] primary written-answer call failed:', err.message);
-    }
+    const groqNewTypeIds = new Set();
+    const newTypeQs = toAnswer.filter((q) => q.new_type);
+    const knownQs = toAnswer.filter((q) => !q.new_type);
 
-    const missing = toAnswer.filter((q) => !byId.get(q.id));
-    // MiniMax left gaps (new/hard questions) → one Groq rescue batch, then stop.
-    if (missing.length) {
-        const allMissing = missing.length === toAnswer.length;
-        console.warn(
-            `[answers] ${missing.length}/${toAnswer.length} written answer(s) empty` +
-            (allMissing ? ' — MiniMax retry then Groq rescue' : ' — Groq rescue for remaining')
-        );
-        if (allMissing) {
+    let byId = new Map();
+
+    if (answersOnGroq) {
+        // Autofill default: one Groq batch for all written questions (rotate keys on quota).
+        if (toAnswer.length) {
             try {
+                console.warn(
+                    `[answers] Groq-only autofill for ${toAnswer.length} question(s)`
+                    + (newTypeQs.length ? ` (${newTypeQs.length} new-type)` : '')
+                );
+                const response = await runWithQuotaFallback(toAnswer, { missingOnly: false });
+                byId = parseAnswerMap(response);
+                for (const q of newTypeQs) {
+                    if (byId.get(q.id)) groqNewTypeIds.add(q.id);
+                }
+            } catch (err) {
+                console.warn('[answers] Groq primary written-answer call failed:', err.message);
+            }
+        }
+        const missing = toAnswer.filter((q) => !byId.get(q.id));
+        if (missing.length) {
+            try {
+                console.warn(`[answers] Groq retry for ${missing.length} empty answer(s)`);
                 const retryResp = await runWithQuotaFallback(missing, { missingOnly: true });
                 const retryMap = parseAnswerMap(retryResp);
                 for (const [id, text] of retryMap) byId.set(id, text);
             } catch (err) {
-                console.warn('[answers] MiniMax missing-answer retry failed:', err.message);
+                console.warn('[answers] Groq missing-answer retry failed:', err.message);
             }
         }
-        const stillMissing = toAnswer.filter((q) => !byId.get(q.id));
-        if (stillMissing.length) {
+        // Skip MiniMax QA pass — drafts already came from Groq.
+    } else {
+        if (knownQs.length) {
             try {
-                const rescueResp = await runGroqRescueForMissing(stillMissing, { missingOnly: true });
-                if (rescueResp) {
-                    const rescueMap = parseAnswerMap(rescueResp);
-                    for (const [id, text] of rescueMap) byId.set(id, text);
-                }
+                const response = await runWithQuotaFallback(knownQs, { missingOnly: false });
+                byId = parseAnswerMap(response);
             } catch (err) {
-                console.warn('[answers] Groq rescue failed:', err.message);
+                console.warn('[answers] primary written-answer call failed:', err.message);
             }
         }
-    }
 
-    // Groq QA: check MiniMax drafts that look weak / wrong before fill+submit.
-    if (groqAnswerCheckEnabled()) {
-        const toCheck = toAnswer
-            .map((q) => ({
-                id: q.id,
-                label: q.label,
-                options: q.options,
-                draft: byId.get(q.id) || ''
-            }))
-            .filter((it) => needsGroqAnswerCheck(
-                { label: it.label, options: it.options },
-                it.draft
-            ));
-        if (toCheck.length) {
-            const fixed = await runGroqAnswerCheck(toCheck);
-            for (const [id, text] of fixed) byId.set(id, text);
+        // New / unclassified types go to Groq first (not MiniMax).
+        if (newTypeQs.length) {
+            try {
+                const groqResp = await runGroqRescueForMissing(newTypeQs, { missingOnly: false });
+                if (groqResp) {
+                    const groqMap = parseAnswerMap(groqResp);
+                    for (const [id, text] of groqMap) {
+                        if (text) {
+                            byId.set(id, text);
+                            groqNewTypeIds.add(id);
+                        }
+                    }
+                }
+                console.warn(
+                    `[answers] Groq answered ${groqNewTypeIds.size}/${newTypeQs.length} new-type question(s)`
+                );
+            } catch (err) {
+                console.warn('[answers] Groq new-type batch failed:', err.message);
+            }
+            const groqMissed = newTypeQs.filter((q) => !byId.get(q.id));
+            if (groqMissed.length) {
+                try {
+                    const mmResp = await runWithQuotaFallback(groqMissed, { missingOnly: true });
+                    const mmMap = parseAnswerMap(mmResp);
+                    for (const [id, text] of mmMap) byId.set(id, text);
+                } catch (err) {
+                    console.warn('[answers] MiniMax fallback for new-type questions failed:', err.message);
+                }
+            }
+        }
+
+        const missing = toAnswer.filter((q) => !byId.get(q.id));
+        // MiniMax left gaps → Groq rescue for remaining.
+        if (missing.length) {
+            const allMissing = missing.length === toAnswer.length;
+            console.warn(
+                `[answers] ${missing.length}/${toAnswer.length} written answer(s) empty` +
+                (allMissing ? ' — MiniMax retry then Groq rescue' : ' — Groq rescue for remaining')
+            );
+            if (allMissing) {
+                try {
+                    const retryResp = await runWithQuotaFallback(missing, { missingOnly: true });
+                    const retryMap = parseAnswerMap(retryResp);
+                    for (const [id, text] of retryMap) byId.set(id, text);
+                } catch (err) {
+                    console.warn('[answers] MiniMax missing-answer retry failed:', err.message);
+                }
+            }
+            const stillMissing = toAnswer.filter((q) => !byId.get(q.id));
+            if (stillMissing.length) {
+                try {
+                    const rescueResp = await runGroqRescueForMissing(stillMissing, { missingOnly: true });
+                    if (rescueResp) {
+                        const rescueMap = parseAnswerMap(rescueResp);
+                        for (const [id, text] of rescueMap) byId.set(id, text);
+                    }
+                } catch (err) {
+                    console.warn('[answers] Groq rescue failed:', err.message);
+                }
+            }
+        }
+
+        // Groq QA: check MiniMax drafts that look weak / wrong before fill+submit.
+        if (groqAnswerCheckEnabled()) {
+            const toCheck = toAnswer
+                .map((q) => ({
+                    id: q.id,
+                    label: q.label,
+                    options: q.options,
+                    draft: byId.get(q.id) || ''
+                }))
+                .filter((it) => !groqNewTypeIds.has(it.id) && needsGroqAnswerCheck(
+                    { label: it.label, options: it.options },
+                    it.draft
+                ));
+            if (toCheck.length) {
+                const fixed = await runGroqAnswerCheck(toCheck);
+                for (const [id, text] of fixed) byId.set(id, text);
+            }
         }
     }
 
@@ -1648,6 +1929,21 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                         .find((t) => /do not have|don'?t have|have not had|no disability|^no\b/i.test(t)
                             && !/^yes\b/i.test(t));
                     answer = noOpt || 'No, I do not have a disability';
+                } else if (
+                    (FIXED_FIELD_RE.years_of_experience?.test(hay) || (/\byears?\b/i.test(hay) && /\bexperience\b/i.test(hay)))
+                    && q.options.some((o) => parseYearsOptionRange(typeof o === 'string' ? o : (o?.label || o?.value || '')))
+                ) {
+                    // Always map from profile years — LLM often returns the first band (0-2).
+                    const yoeLabel = yearsExperienceFillValueServer(profile)
+                        || String(profile.years_of_experience || '').trim()
+                        || '10+';
+                    const picked = pickBestYearsOption(yoeLabel, q.options)
+                        || snapAnswerToOptions(yoeLabel, q.options);
+                    if (picked) answer = picked;
+                    else {
+                        const snapped = snapAnswerToOptions(answer, q.options);
+                        if (snapped) answer = snapped;
+                    }
                 } else {
                     const snapped = snapAnswerToOptions(answer, q.options);
                     if (snapped) answer = snapped;
@@ -1660,8 +1956,9 @@ Return JSON only: {"reviews":[{"id":"q1","ok":true,"answer":"..."},{"id":"q2","o
                 label: q.label,
                 answer,
                 answer_type: 'written',
-                source: 'api',
-                match_source: 'llm',
+                source: groqNewTypeIds.has(q.id) ? 'groq_new_type' : 'api',
+                match_source: groqNewTypeIds.has(q.id) ? 'llm_groq_new_type' : 'llm',
+                new_type: !!q.new_type,
                 lane,
                 kind: q.kind || undefined,
                 unique_subtype: q.unique_subtype || undefined,
@@ -1710,6 +2007,7 @@ module.exports = {
     polishWrittenAnswer,
     looksLikeCompoundQuestion,
     classifyAnswerLane,
+    isNewQuestionType,
     enforceUniqueAnswer,
     textSimilarity,
     fixedConstantKind,

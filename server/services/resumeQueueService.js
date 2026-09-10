@@ -126,8 +126,9 @@ async function connect() {
 }
 
 function enqueueLocal(profileId, jobLinkId, opts = {}) {
-    const key = jobKey(profileId, jobLinkId);
-    if (localQueuedKeys.has(key)) {
+    const base = jobKey(profileId, jobLinkId);
+    const key = opts.force ? `${base}:force:${Date.now()}` : base;
+    if (!opts.force && localQueuedKeys.has(base)) {
         return { ok: true, mode: 'inline', deduped: true };
     }
     localQueuedKeys.add(key);

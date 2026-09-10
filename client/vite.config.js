@@ -10,11 +10,15 @@ export default defineConfig({
         }
     },
     server: {
-        host: true,
+        host: '0.0.0.0',
         port: 5173,
+        cors: true,
         allowedHosts: [
         "neptunemart.space",
-        "www.neptunemart.space"
+        "www.neptunemart.space",
+        "51.68.138.192",
+        "localhost",
+        "127.0.0.1"
         ],
         proxy: {
             '/api': {

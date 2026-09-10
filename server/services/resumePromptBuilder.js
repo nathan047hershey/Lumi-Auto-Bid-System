@@ -37,7 +37,7 @@ EDUCATION (two lines only)
 <p><strong>Degree</strong></p>
 <p>School | YYYY - YYYY</p>
 
-Output HTML only. Do not narrate planning or debate the rules — emit the resume.${workSummary}`.trim();
+Output HTML only. Keep any private reasoning under ~400 tokens, then emit the resume immediately. Do not narrate planning or debate the rules — emit the resume.${workSummary}`.trim();
 }
 
 function truncateJd(text, max = 2800) {

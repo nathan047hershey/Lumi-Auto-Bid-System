@@ -49,6 +49,7 @@ import {
     processQueuePrefsPayload
 } from '@/lib/lumiBidderPrefs';
 import LumiBidderSettings from '@/components/LumiBidderSettings';
+import TeachAndCheckPanel from '@/components/TeachAndCheckPanel';
 import BidMonitorDock from '@/components/job-links/BidMonitorDock';
 import BidProgressBar from '@/components/job-links/BidProgressBar';
 import {
@@ -3048,6 +3049,10 @@ export default function AutoBidderDialog({ open, onOpenChange, isAdmin, selected
                                                 <p className="text-[11px] text-muted-foreground">
                                                     Policy memory studies fixed answers (disability No, sponsorship No, …). Unique essays stay fresh per job.
                                                 </p>
+                                                <TeachAndCheckPanel
+                                                    compact
+                                                    onTaught={() => refreshStudyingPanel()}
+                                                />
                                                 {helperProbe?.probed ? (
                                                     <p className={`text-[11px] ${helperProbe.helper_missing ? 'text-amber-300' : 'text-emerald-300/90'}`}>
                                                         Helpers:{' '}

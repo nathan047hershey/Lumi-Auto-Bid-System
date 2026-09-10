@@ -163,34 +163,94 @@
         return `$${rounded.toLocaleString('en-US')}`;
     }
 
-    function pickSalaryExpectation({ jobDescription, profileSalaryRange, fieldLabel = '' } = {}) {
+    function inferJobSalaryBand({ jobDescription = '', jobRole = '', companyName = '' } = {}) {
+        const hay = `${jobRole || ''} ${companyName || ''} ${String(jobDescription || '').slice(0, 4000)}`.toLowerCase();
+        let mid = 145000;
+        if (/\b(intern|internship|co[\s-]?op)\b/.test(hay)) mid = 75000;
+        else if (/\b(junior|entry[\s-]?level|associate|new grad|graduate)\b/.test(hay)) mid = 105000;
+        else if (/\b(distinguished|fellow|vp\b|vice president|head of)\b/.test(hay)) mid = 240000;
+        else if (/\b(principal|staff)\b/.test(hay)) mid = 215000;
+        else if (/\b(senior|sr\.?|lead)\b/.test(hay)) mid = 175000;
+        else if (/\b(manager|director)\b/.test(hay)) mid = 190000;
+        else if (/\b(mid[\s-]?level|ii\b|2\b)\b/.test(hay)) mid = 140000;
+        if (/\b(machine learning|ml engineer|ai engineer|security|cryptograph|platform|sre|devops|infrastructure|data engineer)\b/.test(hay)) {
+            mid = Math.round(mid * 1.08);
+        }
+        if (/\b(frontend|react|ui engineer|support|qa|quality assurance|manual test)\b/.test(hay)) {
+            mid = Math.round(mid * 0.95);
+        }
+        if (/\b(san francisco|bay area|nyc|new york city|seattle|redmond|cupertino|palo alto|mountain view)\b/.test(hay)) {
+            mid = Math.round(mid * 1.1);
+        } else if (/\b(remote|anywhere|midwest|texas|florida|ohio|georgia|north carolina)\b/.test(hay)) {
+            mid = Math.round(mid * 0.94);
+        }
+        mid = Math.max(70000, Math.min(350000, mid));
+        let hash = 0;
+        const key = `${jobRole}|${companyName}|${String(jobDescription || '').slice(0, 240)}`;
+        for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+        const jitter = ((Math.abs(hash) % 11) - 5) * 1000;
+        mid = Math.max(70000, mid + jitter);
+        const spread = Math.round(mid * 0.1);
+        return { min: mid - spread, max: mid + spread };
+    }
+
+    function pickSalaryExpectation({
+        jobDescription,
+        profileSalaryRange,
+        fieldLabel = '',
+        jobRole = '',
+        companyName = ''
+    } = {}) {
         const jdRange = parseRangeFromText(jobDescription);
         const profileRange = parseRangeFromText(profileSalaryRange);
+        const jobBand = (!jdRange)
+            ? inferJobSalaryBand({ jobDescription, jobRole, companyName })
+            : null;
         let min;
         let max;
+        let source;
         if (jdRange && profileRange) {
             const lo = Math.max(jdRange.min, profileRange.min);
             const hi = Math.min(jdRange.max, profileRange.max);
             if (lo <= hi) {
                 min = lo;
                 max = hi;
+                source = 'jd_profile_overlap';
             } else {
-                // Profile outside JD — mid-low of JD, never the posting max.
                 min = jdRange.min;
                 max = jdRange.max;
+                source = 'jd_mid_low';
             }
         } else if (jdRange) {
             min = jdRange.min;
             max = jdRange.max;
+            source = 'jd_only';
+        } else if (jobBand && profileRange) {
+            min = jobBand.min;
+            max = jobBand.max;
+            const jobMid = (jobBand.min + jobBand.max) / 2;
+            const profMid = (profileRange.min + profileRange.max) / 2;
+            if (Math.abs(jobMid - profMid) > 80000) {
+                min = Math.round((jobBand.min + profileRange.min) / 2);
+                max = Math.round((jobBand.max + profileRange.max) / 2);
+            }
+            source = 'job_inferred_blend';
+        } else if (jobBand) {
+            min = jobBand.min;
+            max = jobBand.max;
+            source = 'job_inferred';
         } else if (profileRange) {
             min = profileRange.min;
             max = profileRange.max;
+            source = 'profile_only';
         } else if (profileSalaryRange && String(profileSalaryRange).trim()) {
             const raw = String(profileSalaryRange).trim();
             if (/^\$?\s*0+\s*$/.test(raw)) return null;
-            return { value: null, formatted: raw };
+            return { value: null, formatted: raw, source: 'profile_raw' };
         } else {
-            return null;
+            min = 120000;
+            max = 160000;
+            source = 'default_mid';
         }
         const value = Math.round(min + (max - min) * 0.35);
         if (!Number.isFinite(value) || value < 15000) return null;
@@ -200,7 +260,7 @@
         if (/\b(amount|number|usd\s*only|numeric)\b/.test(label)) style = 'number';
         const formatted = formatSalary(value, style);
         if (!formatted) return null;
-        return { value, formatted };
+        return { value, formatted, source };
     }
 
     function matchSalaryOption(options, pick) {
@@ -287,6 +347,9 @@
         if (host.includes('bamboohr.com')) {
             return 'bamboohr';
         }
+        if (host.includes('rippling.com') || host.includes('ats.rippling')) {
+            return 'rippling';
+        }
         if (
             host.includes('oraclecloud.com')
             || host.includes('.oracle.com/hcm')
@@ -356,9 +419,21 @@
             || /select__input|react-select/i.test(String(el.className || ''))
             || el.closest('.select__control, .select__container, [class*="select__control"]')
         );
-        // Greenhouse often hides native radios/checkboxes/file inputs at opacity:0 (custom UI).
-        const isOpaqueControl = type === 'radio' || type === 'checkbox' || type === 'file' || isSelectInput;
+        // Greenhouse / Rippling hide native radios, checkboxes, and file inputs
+        // (opacity 0 or display:none) inside a visible custom dropzone / toggle.
+        const isFile = type === 'file';
+        const isOpaqueControl = type === 'radio' || type === 'checkbox' || isFile || isSelectInput;
         const style = window.getComputedStyle(el);
+        if (isFile) {
+            const wrap = el.closest(
+                'label, [class*="drop"], [class*="upload"], [class*="file"], [class*="attach"], '
+                + 'fieldset, .field, .form-field, [class*="Field"], [class*="Document"]'
+            ) || el.parentElement;
+            if (wrap) {
+                const cr = wrap.getBoundingClientRect();
+                if (cr.width > 4 && cr.height > 4) return true;
+            }
+        }
         if (style.display === 'none' || style.visibility === 'hidden') return false;
         if (!isOpaqueControl && Number(style.opacity) === 0) return false;
         if (isOpaqueControl) {
@@ -1206,6 +1281,7 @@
         // Prefer profile when set. These are FIXED answers — never invent via API
         // even if the form wording differs (Gender / Sex / Legal sex, etc.).
         if (/\b(gender|sex)\b/.test(hay) && !/\bsexual\b/.test(hay)) return 'gender';
+        if (/\bthink of yourself as\b/.test(hay)) return 'gender';
         if (/\b(disabilit(?:y|ies)|disabled|\bada\b)\b/.test(hay)) return 'disability_status';
         if (/\b(veteran|military[\s_-]*status|armed[\s_-]*forces)\b/.test(hay)) return 'veteran_status';
         if (/\b(race|ethnicity|ethnic)\b/.test(hay) && !/\bhispanic|latino\b/.test(hay)) return 'race_ethnicity';
@@ -1226,7 +1302,36 @@
         if (/\b(travel|willing[\s_-]*to[\s_-]*travel|percent[\s_-]*travel)\b/.test(hay)) {
             return 'willing_to_travel';
         }
-        if (/\b(start[\s_-]*date|earliest[\s_-]*start|available[\s_-]*to[\s_-]*start|when[\s_-]*can[\s_-]*you[\s_-]*start)\b/.test(hay)) {
+        // Education month/year BEFORE generic "start date" (job availability).
+        if (
+            /start[\s_-]*date[\s_-]*month|start[\s_-]*month|\[start_date\]\s*\[month\]/i.test(hay)
+            || (/month/.test(hay) && /start/.test(hay) && !/end/.test(hay)
+                && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_start_month';
+        }
+        if (
+            /start[\s_-]*date[\s_-]*year|start[\s_-]*year|\[start_date\]\s*\[year\]/i.test(hay)
+            || (/year/.test(hay) && /start/.test(hay) && !/end/.test(hay)
+                && /educat|school|degree|date/.test(hay)
+                && !/earliest|available|can you start/.test(hay))
+        ) {
+            return 'education_start_year';
+        }
+        if (
+            /end[\s_-]*date[\s_-]*month|end[\s_-]*month|graduat\w*\s*month|\[end_date\]\s*\[month\]/i.test(hay)
+            || (/month/.test(hay) && /end|graduat/.test(hay) && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_end_month';
+        }
+        if (
+            /end[\s_-]*date[\s_-]*year|end[\s_-]*year|graduat\w*\s*year|year\s*of\s*graduation|\[end_date\]\s*\[year\]/i.test(hay)
+            || (/year/.test(hay) && /end|graduat/.test(hay) && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_end_year';
+        }
+        if (/\b(start[\s_-]*date|earliest[\s_-]*start|available[\s_-]*to[\s_-]*start|when[\s_-]*can[\s_-]*you[\s_-]*start)\b/.test(hay)
+            && !/\b(month|year|education|school|graduat|degree)\b/.test(hay)) {
             return 'earliest_start_date';
         }
         // Privacy / consent / NDA / AI-recording acknowledge dropdowns (before notice period).
@@ -1254,8 +1359,23 @@
         if (/\bU\.?\s*S\.?\s*person\b|whether you are a\s*["“']?U\.?\s*S\.?\s*person/i.test(hay)) {
             return 'us_person_yes';
         }
-        if (/\b(have you (ever )?worked|previously\s+worked|former\b.{0,48}\bemployee|are you a former\b|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(at|for)\b|ever\s+worked\s+(at|for)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i.test(hay)) {
+        if (/\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|previously\s+worked\s+(at|for|here|with\s+(us|this|our)|before)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer|organization|firm)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i.test(hay)) {
             return 'previous_employer_no';
+        }
+        // Stack / tech experience → Yes (not company employment).
+        if (/\b((do you have|have you)\b.{0,120}\b(deep\s+)?(hands[\s-]*on\s+)?(experience|worked with|familiar|proficien|knowledge)\b.{0,120}\b(python|java|javascript|typescript|react|sql|aws|azure|gcp|certificate|pki|x\.?509|security|api|rest|kubernetes|docker|devops|ml|ai|production)|experience\b.{0,40}\b(using|with)\b.{0,40}\b(python|java|react|sql|pki|certificate|api))\b/i.test(hay)
+            && !/\b(sponsor|visa|disabilit|veteran|felony|describe|tell us|explain|company|employer|affiliate|subsidiary)\b/i.test(hay)) {
+            return 'skill_experience';
+        }
+        if (/\b(relative|family member|know anyone|personal relationship|related to (anyone|an? employee)|friend (working|employed)|anyone you know (who )?(works|is employed))\b/i.test(hay)) {
+            return 'employee_relationship_no';
+        }
+        if (/\b(non[\s_-]*compete|noncompete|restrictive covenant|garden leave)\b/i.test(hay)
+            || /\b(incomplete|not complete|unfinished)\b.{0,60}\b(degree|program|education)\b/i.test(hay)) {
+            return 'non_compete_no';
+        }
+        if (/\b(are you|confirm you are)\b.{0,40}\b(a\s+)?(u\.?\s*s\.?\s*|united states)\s*citizen\b/i.test(hay)) {
+            return 'us_citizen_yes';
         }
         if (/\b(export[\s_-]*control|EAR\s*\/?\s*ITAR|U\.?\s*S\.?\s*laws concerning the export|confirm I am one of the following)\b/i.test(hay)) {
             return 'export_control_us_citizen';
@@ -1270,6 +1390,26 @@
             && !/\byears?[\s_-]*of[\s_-]*experience\s+(with|in|using|on)\b/.test(hay)
             && !/\b(describe|explain|provide|tell us|open[\s_-]*source|example)\b/.test(hay)) {
             return 'years_of_experience';
+        }
+        // "Which of the following best describes your experience with REST APIs?"
+        // AI tools: "select one … best describes you" / knowledge and use with AI tools
+        if (/\b(which of the following|best describes|rate your|level of)\b/.test(hay)
+            && /\b(experience|proficiency|familiarit|skill|ai tools?|chatgpt|copilot|knowledge and use)\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        if (/\bselect one of the below\b/.test(hay) && /\bbest describes\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        if (/\bexperience with\b/.test(hay) && /\?/.test(hay) && !/\b(describe|tell us|explain)\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        // "Have you written Python … production?" Yes/No skill levels
+        if (/\b(have you|do you)\b/.test(hay)
+            && /\b(written|built|maintain|used|worked with)\b/.test(hay)
+            && /\b(production|python|rest|api|sql|java|react|typescript|golang)\b/.test(hay)
+            && /\?/.test(hay)
+            && !/\b(describe|tell us|explain|essay)\b/.test(hay)) {
+            return 'skill_experience';
         }
         // YoE bucket radios: "How many years … (front end + back end)?"
         if (/\byears?\b/.test(hay) && /\b(experience|exp)\b/.test(hay)
@@ -1367,7 +1507,7 @@
         if (labelLooksLikeSponsorship(lab)) {
             return sponsorshipAnswerFromProfile(profile);
         }
-        if (/\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\s+(employee|employer)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker)\b/i.test(lab)) {
+        if (/\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\b.{0,48}\bemployee|are you a former\b|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker)\b/i.test(lab)) {
             return 'No';
         }
         if (LONE_US_STATE.test(v) && /rationale|evidence|high school|degree result|grading|performance selections/.test(lab)) {
@@ -1562,9 +1702,16 @@
             if (type === 'file') {
                 let fileKind = kind;
                 const idHay = `${el.id || ''} ${el.name || ''}`.toLowerCase();
+                const nearby = `${label} ${el.closest(
+                    'label, fieldset, .field, .form-field, [class*="upload"], [class*="drop"], [class*="file"]'
+                )?.innerText || ''}`;
                 if (/cover|letter/i.test(idHay) || /\bcover[\s_-]*letter\b/i.test(label)) {
                     fileKind = 'cover_letter';
-                } else if (/resume|cv/i.test(idHay) || /\b(resume|cv|curriculum)\b/i.test(label)) {
+                } else if (
+                    /resume|cv/i.test(idHay)
+                    || /\b(resume|r[ée]sum[eé]|cv|curriculum)\b/i.test(nearby)
+                    || (/drop or select/i.test(nearby) && /\.docx?|\.pdf/i.test(nearby))
+                ) {
                     fileKind = 'resume';
                 }
                 // Greenhouse job-boards: id="resume" / id="cover_letter" are authoritative.
@@ -1575,7 +1722,7 @@
                     label: label || el.id || 'file',
                     kind: fileKind,
                     required: !!(el.required || el.getAttribute('aria-required') === 'true'
-                        || /\*/.test(label)
+                        || /\*/.test(nearby)
                         || /\brequired\b/i.test(label)
                         || fileKind === 'resume')
                 });
@@ -1599,6 +1746,8 @@
                 tag: el.tagName.toLowerCase(),
                 combobox: isCombobox,
                 required: isRequiredField(el, label)
+                    || kind === 'requires_sponsorship'
+                    || labelLooksLikeSponsorship(label)
             });
 
             // Send written + eligibility Yes/No / selects to the answers API (profile fills name/email/phone).
@@ -1649,6 +1798,46 @@
             }
         }
 
+        // Hidden dropzone file inputs (Rippling display:none) if the visible() pass missed them.
+        for (const el of document.querySelectorAll('input[type="file"]')) {
+            if (!el || el.disabled) continue;
+            const label = labelFor(el);
+            const id = fieldKey(el, label);
+            if (seenIds.has(id)) continue;
+            const wrap = el.closest(
+                'label, fieldset, .field, .form-field, [class*="upload"], [class*="drop"], '
+                + '[class*="file"], [class*="attach"]'
+            ) || el.parentElement;
+            const cr = wrap?.getBoundingClientRect?.();
+            const nearby = `${label} ${wrap?.innerText || ''}`;
+            const looksDropzone = (cr && cr.width > 4 && cr.height > 4)
+                || /\b(resume|r[ée]sum[eé]|cv|curriculum)\b/i.test(nearby)
+                || /drop or select/i.test(nearby);
+            if (!looksDropzone) continue;
+            seenIds.add(id);
+            const idHay = `${el.id || ''} ${el.name || ''}`.toLowerCase();
+            let fileKind = 'other';
+            if (/cover|letter/i.test(idHay) || /\bcover[\s_-]*letter\b/i.test(nearby)) {
+                fileKind = 'cover_letter';
+            } else if (
+                /resume|cv/i.test(idHay)
+                || /\b(resume|r[ée]sum[eé]|cv|curriculum)\b/i.test(nearby)
+                || (/drop or select/i.test(nearby) && /\.docx?|\.pdf/i.test(nearby))
+            ) {
+                fileKind = 'resume';
+            }
+            if (/^resume$/i.test(el.id || el.name || '')) fileKind = 'resume';
+            if (/^cover_letter$/i.test(el.id || el.name || '')) fileKind = 'cover_letter';
+            fileInputs.push({
+                id,
+                label: label || el.id || 'file',
+                kind: fileKind,
+                required: !!(el.required || el.getAttribute('aria-required') === 'true'
+                    || /\*/.test(nearby)
+                    || fileKind === 'resume')
+            });
+        }
+
         // Radio groups: one logical field per name (or shared legend).
         const radios = [...document.querySelectorAll('input[type="radio"]')].filter(visible);
         const byName = new Map();
@@ -1679,7 +1868,7 @@
             } else if (/\b(sponsor|sponsorship|employment[\s_-]*visa|require.*visa|h-?1b|visa[\s_-]*status)\b/.test(labLow)
                 || /\bwill you.{0,60}\b(require|need).{0,40}\b(sponsor|visa)\b/.test(labLow)) {
                 kind = 'requires_sponsorship';
-            } else if (/\b(previously\s+worked|have you (ever )?worked|worked\s+(at|for)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee|former\s+(employee|employer))\b/.test(labLow)) {
+            } else if (/\b(previously\s+worked|have you (ever )?worked|worked\s+(at|for)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee|former\b.{0,48}\bemployee|are you a former\b)\b/.test(labLow)) {
                 kind = 'previous_employer_no';
             }
             const id = `radio_${name}`.slice(0, 140);
@@ -1703,6 +1892,8 @@
                 inputType: 'radio',
                 options,
                 required: group.some((g) => isRequiredField(g, label))
+                    || kind === 'requires_sponsorship'
+                    || labelLooksLikeSponsorship(label)
             });
             if (
                 kind === 'question'
@@ -2036,32 +2227,105 @@
         return { school, degree, discipline };
     }
 
-    function yearsExperienceFillValue(profile) {
-        const raw = String(profile?.years_of_experience || '').trim();
-        if (!raw) return '';
-        // Already a bucket label
-        if (/year/i.test(raw) || /[+]/.test(raw) || /-/.test(raw)) return raw;
-        const n = parseInt(raw.replace(/[^\d]/g, ''), 10);
-        if (!Number.isFinite(n)) return raw;
-        if (n < 5) return 'Less than 5 years';
-        if (n <= 6) return '5-6 years';
-        if (n <= 10) return '7-10 years';
-        return '10+ years';
+    const MONTH_NAMES_FILL = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    function parseEducationDates(profile) {
+        const p = profile || {};
+        const blob = `${p.education || ''} ${p.school || ''} ${p.degree || ''}`;
+        const out = {
+            startMonth: 'August',
+            startYear: '',
+            endMonth: 'May',
+            endYear: ''
+        };
+        let m = blob.match(/(\d{1,2})\s*[\/\-]\s*(20\d{2})\s*[-–—to]+\s*(\d{1,2})\s*[\/\-]\s*(20\d{2}|present|current)/i);
+        if (m) {
+            out.startMonth = MONTH_NAMES_FILL[Math.max(0, Math.min(11, parseInt(m[1], 10) - 1))] || 'August';
+            out.startYear = m[2];
+            if (!/present|current/i.test(m[4])) {
+                out.endMonth = MONTH_NAMES_FILL[Math.max(0, Math.min(11, parseInt(m[3], 10) - 1))] || 'May';
+                out.endYear = m[4];
+            }
+            return out;
+        }
+        m = blob.match(/\b(19|20)(\d{2})\s*[-–—to]+\s*((?:19|20)\d{2}|present|current)\b/i);
+        if (m) {
+            out.startYear = `${m[1]}${m[2]}`;
+            if (!/present|current/i.test(m[3])) out.endYear = m[3];
+            return out;
+        }
+        m = blob.match(/\b(?:graduat\w*|class of|in)\s+(20\d{2})\b/i) || blob.match(/\b(20\d{2})\b/);
+        if (m) {
+            const y = parseInt(m[1], 10);
+            out.endYear = String(y);
+            out.startYear = String(Math.max(1990, y - 4));
+        }
+        return out;
     }
 
-    function normalizeWorkAuthorization(profile) {
-        const raw = String(profile?.work_authorization || '').trim();
-        const country = String(profile?.country || 'United States').trim();
-        const isUsProfile = /^(united states|usa|u\.?s\.?a?\.?)$/i.test(country);
+    function skillExperienceFillAliases(profile, label = '') {
+        const n = parseInt(String(profile?.years_of_experience || '').replace(/\D/g, ''), 10) || 0;
+        const lab = String(label || '').toLowerCase();
+        const isAi = /\b(ai tools?|chatgpt|copilot|generative ai|knowledge and use)\b/.test(lab);
+        const isProdYn = /\b(have you|written|runs in a production|production environment)\b/.test(lab)
+            || (/\bpython\b/.test(lab) && /\bproduction\b/.test(lab));
+        if (isAi) {
+            return n >= 3
+                ? ['Extensively', 'Yes, extensively', 'Frequently', 'Advanced']
+                : ['Occasionally', 'Yes', 'Sometimes'];
+        }
+        if (isProdYn) {
+            return n >= 2
+                ? [
+                    'Yes – I currently maintain Python services in production',
+                    'Yes – I have in the past',
+                    'Yes',
+                    'Yes, production'
+                ]
+                : ['No – only academic/personal use', 'No'];
+        }
+        if (n >= 5) {
+            return [
+                'Built and maintained APIs and integrated external APIs in production',
+                'Built and maintained',
+                'production',
+                'Expert', 'Advanced', 'Extensive',
+                '10+ years', '10 or more', '5+ years', 'Proficient'
+            ];
+        }
+        if (n >= 3) {
+            return [
+                'Built and maintained', 'production', 'Proficient', 'Intermediate',
+                '3-5 years', 'Working knowledge'
+            ];
+        }
+        return ['1-3 years', 'Familiar', 'Beginner', 'Basic', 'Some experience'];
+    }
 
-        if (!raw) return isUsProfile ? 'Yes' : '';
-        if (/^(yes|y|true|1)$/i.test(raw)) return 'Yes';
-        if (/^(no|n|false|0)$/i.test(raw)) return 'No';
-        if (/\b(united states|usa|u\.?s\.?)\b/i.test(raw) && isUsProfile) return 'Yes';
-        if (/\b(country|nation)\b/i.test(raw)) return isUsProfile ? 'Yes' : '';
-        if (/\b(not|no|ineligible|require.*sponsor)\b/i.test(raw)) return 'No';
-        if (/\b(yes|authorized|citizen|permanent|green card)\b/i.test(raw)) return 'Yes';
-        return isUsProfile ? 'Yes' : raw;
+    function yearsExperienceFillValue(profile) {
+        const raw = String(profile?.years_of_experience || '').trim();
+        const n = parseInt(String(raw).replace(/[^\d]/g, ''), 10);
+        // Never answer 0–2 / less than 1 — rewrite to mid/senior band.
+        if (!Number.isFinite(n) || n <= 0) return '5+ years';
+        if (n >= 10) return '10+ years';
+        if (n <= 6 && n >= 5) return '5-6 years';
+        if (n <= 10 && n >= 7) return '7-10 years';
+        if (n >= 5) return '5+ years';
+        if (n >= 3) return '3-5 years';
+        return '3-5 years';
+    }
+
+    /** Visa sponsorship: always No. */
+    function sponsorshipAnswerFromProfile(_profile) {
+        return 'No';
+    }
+
+    function normalizeWorkAuthorization(_profile) {
+        // Hard lock: always authorized Yes.
+        return 'Yes';
     }
 
     function findElByField(field) {
@@ -2172,7 +2436,7 @@
         } else if (
             field?.kind === 'previous_employer_no'
             || field?.kind === 'sanctioned_countries_no'
-            || /\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\s+(employee|employer)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee)\b/i.test(String(field?.label || ''))
+            || /\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\b.{0,48}\bemployee|are you a former\b|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee)\b/i.test(String(field?.label || ''))
         ) {
             wantRaw = 'No';
         }
@@ -2333,13 +2597,6 @@
         return '';
     }
 
-    /** Sponsorship answer: default No. Only exact Yes/Y/true/1 from profile flips it. */
-    function sponsorshipAnswerFromProfile(profile) {
-        const raw = String(profile?.requires_sponsorship || '').trim();
-        if (/^(yes|y|true|1)$/i.test(raw)) return 'Yes';
-        return 'No';
-    }
-
     function labelLooksLikeSponsorship(label) {
         if (labelLooksLikeAuthorizedWithoutSponsorship(label)) return false;
         const lab = String(label || '').toLowerCase();
@@ -2403,17 +2660,17 @@
             case 'address': return profile.address || '';
             case 'birthdate': return profile.birthdate || '';
             case 'todays_date': return formatEstTodayMdY();
-            case 'gender': return profile.gender || '';
+            case 'gender': return profile.gender || 'Male';
             case 'work_authorization': return normalizeWorkAuthorization(profile);
             case 'requires_sponsorship': {
-                // Hard default No — only exact Yes flips this (never free-text / AI).
-                return sponsorshipAnswerFromProfile(profile);
+                return 'No';
             }
             case 'disability_status':
                 // Hard lock: always No for every profile / ATS wording.
                 return 'No, I do not have a disability';
             case 'onsite_hub_yes':
             case 'us_person_yes':
+            case 'us_citizen_yes':
                 return 'Yes';
             case 'veteran_status':
                 return profile.veteran_status || 'I am not a protected veteran';
@@ -2427,15 +2684,10 @@
             case 'degree_result': return degreeResultText(profile);
             case 'employer_count': return String(countEmployersFromProfile(profile));
             case 'preferred_name': return profile.preferred_name || profile.first_name || '';
-            case 'over_18': {
-                const raw = String(profile.over_18 || '').trim();
-                if (raw) return raw;
-                // Default Yes for US applicants when unset (common required ATS field).
-                const country = String(profile.country || 'United States').trim();
-                return /^(united states|usa|u\.?s\.?a?\.?)$/i.test(country) ? 'Yes' : '';
-            }
+            case 'over_18':
+                return 'Yes';
             case 'salary_comfort_yes': return 'Yes';
-            case 'hispanic_latino': return profile.hispanic_latino || 'No';
+            case 'hispanic_latino': return 'No';
             case 'willing_to_relocate': return profile.willing_to_relocate || 'Yes';
             case 'willing_to_travel': return profile.willing_to_travel || 'Yes';
             case 'earliest_start_date': return profile.earliest_start_date || '2 weeks';
@@ -2444,14 +2696,28 @@
                 // Prefer Agree — fill snaps to Yes / I agree / I acknowledge from the open menu.
                 return 'I agree';
             case 'how_heard': return profile.how_heard || 'LinkedIn';
-            case 'previous_employer_no': return 'No';
-            case 'onsite_hub_yes':
-            case 'us_person_yes':
-                return 'Yes';
+            case 'previous_employer_no':
+            case 'employee_relationship_no':
+            case 'non_compete_no':
+            case 'sanctioned_countries_no':
+                return 'No';
             case 'export_control_us_citizen': return 'U.S. Citizen';
             case 'immigration_na_if_citizen': return 'N/A';
-            case 'sanctioned_countries_no': return 'No';
             case 'years_of_experience': return yearsExperienceFillValue(profile);
+            case 'skill_experience': {
+                const skillLab = String(field?.label || '');
+                if (/\b(former|employed by|related (company|role|employer)|affiliate|subsidiary|this company|our company|worked (at|for) (us|this|our))\b/i.test(skillLab)) {
+                    return 'No';
+                }
+                if (/\b(python|java|react|sql|pki|certificate|aws|api|rest|security|experience (using|with)|worked with|hands[\s-]*on)\b/i.test(skillLab)) {
+                    return 'Yes';
+                }
+                return skillExperienceFillAliases(profile)[0] || 'Yes';
+            }
+            case 'education_start_month': return parseEducationDates(profile).startMonth || 'August';
+            case 'education_start_year': return parseEducationDates(profile).startYear || '';
+            case 'education_end_month': return parseEducationDates(profile).endMonth || 'May';
+            case 'education_end_year': return parseEducationDates(profile).endYear || '';
             case 'education_level': return profile.education_level || '';
             case 'school': return parseEducationParts(profile).school;
             case 'degree': return parseEducationParts(profile).degree;
@@ -2579,7 +2845,7 @@
         if (kind === 'previous_employer_no' || kind === 'requires_sponsorship' || kind === 'sanctioned_countries_no') {
             return kind;
         }
-        if (/\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\s+(employee|employer)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker)\b/i.test(lab)) {
+        if (/\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\b.{0,48}\bemployee|are you a former\b|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker)\b/i.test(lab)) {
             return 'previous_employer_no';
         }
         if (labelLooksLikeAuthorizedWithoutSponsorship(lab)) {
@@ -2735,7 +3001,7 @@
         return el.value || '';
     }
 
-    async function fillForm({ fields, answers, profile, jobDescription }) {
+    async function fillForm({ fields, answers, profile, jobDescription, companyName = '', jobRole = '', skipQuestions = false }) {
         // Close any leftover phone dial-code / select menus from a prior attempt.
         // Must fully dismiss iti (Escape) — display:none alone leaves keydown handlers active.
         // Do NOT set display:none on .select__menu — Greenhouse fixtures / some ATS only
@@ -2804,13 +3070,15 @@
                     salaryPick = pickSalaryExpectation({
                         jobDescription: jobDescription || '',
                         profileSalaryRange: profile?.salary_range || profile?.desired_salary || '',
-                        fieldLabel: field.label || ''
+                        fieldLabel: field.label || '',
+                        jobRole: jobRole || '',
+                        companyName: companyName || ''
                     });
                     if (!value && salaryPick?.formatted) value = salaryPick.formatted;
-                    // Never leave required salary blank — use profile or a safe mid-market default.
+                    // Never leave required salary blank — job-inferred or profile fallback.
                     if (!value) {
                         const raw = String(profile?.salary_range || profile?.desired_salary || '').trim();
-                        value = raw || '$120,000';
+                        value = raw || salaryPick?.formatted || '$140,000';
                     }
                 }
             } else if (field.kind === 'salary_comfort_yes') {
@@ -2898,10 +3166,15 @@
                 if (!value && /bachelor.*degree result|degree result|grading system|expected result/.test(qLow)) {
                     value = personalValue('degree_result', profile);
                 }
+                // Early profile-only pass: never invent essays/stubs — AI answers overwrite later.
+                if (!value && skipQuestions) {
+                    skippedWritten += 1;
+                    continue;
+                }
                 if (!value) {
                     value = fallbackEssayForQuestion(field.label, profile, jobDescription || '');
                 }
-                if (!value && (field.inputType === 'textarea' || field.type === 'textarea') && field.required) {
+                if (!value && !skipQuestions && (field.inputType === 'textarea' || field.type === 'textarea') && field.required) {
                     const yoe = String(profile?.years_of_experience || '').replace(/\D/g, '');
                     const skills = String(profile?.skills || '').split(/[,;|]/).filter(Boolean).slice(0, 4).join(', ');
                     value = (
@@ -3071,7 +3344,9 @@
                     salaryPickForSelect = salaryPick || pickSalaryExpectation({
                         jobDescription: jobDescription || '',
                         profileSalaryRange: profile?.salary_range || '',
-                        fieldLabel: field.label || ''
+                        fieldLabel: field.label || '',
+                        jobRole: jobRole || '',
+                        companyName: companyName || ''
                     });
                     if (salaryPickForSelect?.formatted) wantSel = salaryPickForSelect.formatted;
                     else if (salaryPickForSelect?.value != null) wantSel = String(salaryPickForSelect.value);
@@ -3101,7 +3376,9 @@
                 const pick = salaryPick || pickSalaryExpectation({
                     jobDescription: jobDescription || '',
                     profileSalaryRange: profile?.salary_range || '',
-                    fieldLabel: field.label || ''
+                    fieldLabel: field.label || '',
+                    jobRole: jobRole || '',
+                    companyName: companyName || ''
                 });
                 if (pick?.value != null) writeValue = String(pick.value);
             }
@@ -3160,7 +3437,9 @@
                 let comboPromise;
                 if (kind === 'city' || kind === 'state' || kind === 'country'
                     || kind === 'school' || kind === 'degree' || kind === 'discipline'
-                    || kind === 'education_level' || kind === 'high_school_performance') {
+                    || kind === 'education_level' || kind === 'high_school_performance'
+                    || kind === 'skill_experience' || kind === 'years_of_experience'
+                    || /^education_(start|end)_/.test(kind)) {
                     comboPromise = scheduleLocationAutocomplete(comboEl, writeValue, kind || 'city', profile);
                 } else {
                     const aliases = [];
@@ -3329,11 +3608,13 @@
                         const salaryPick = pickSalaryExpectation({
                             jobDescription: jobDescription || '',
                             profileSalaryRange: profile?.salary_range || profile?.desired_salary || '',
-                            fieldLabel: f.label || ''
+                            fieldLabel: f.label || '',
+                            jobRole: jobRole || '',
+                            companyName: companyName || ''
                         });
                         wanted = salaryPick?.formatted
                             || String(profile?.salary_range || profile?.desired_salary || '').trim()
-                            || '$120,000';
+                            || '$140,000';
                     }
                 }
             } else if (f.kind === 'salary_comfort_yes') {
@@ -4220,6 +4501,8 @@
             || kind === 'data_protection'
             || kind === 'employer_count'
             || kind === 'years_of_experience'
+            || kind === 'skill_experience'
+            || /^education_(start|end)_/.test(kind)
             || kind === 'how_heard'
             || kind === 'work_authorization'
             || kind === 'requires_sponsorship'
@@ -4384,7 +4667,7 @@
                     aliases: aliasList,
                     kind,
                     pickWhileTyping: true,
-                    minScore: Math.max(minScore, 70)
+                    minScore: kind === 'city' ? 55 : Math.max(minScore, 70)
                 });
                 if (typed.ok) {
                     if (await waitUntil(verified, { timeoutMs: 600, pollMs: 30 })) return true;
@@ -4566,6 +4849,15 @@
                 const head = wantRaw.split(/[\s,/&-]+/).filter((w) => w.length > 2)[0];
                 if (head) list.push(head);
             }
+            if (kind === 'skill_experience' || kind === 'years_of_experience') {
+                list.push(...skillExperienceFillAliases(profile, wantRaw));
+            }
+            if (/^education_(start|end)_month$/.test(kind)) {
+                list.push(
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'
+                );
+            }
             if (wantRaw.includes(',')) list.push(wantRaw.split(',')[0].trim());
             return [...new Set(list.filter(Boolean))];
         })();
@@ -4589,13 +4881,19 @@
         // Education / country / state / high-school: Simplify verify+retry path
         if (kind === 'school' || kind === 'degree' || kind === 'discipline'
             || kind === 'education_level' || kind === 'country' || kind === 'state'
-            || kind === 'high_school_performance') {
+            || kind === 'high_school_performance'
+            || kind === 'skill_experience' || kind === 'years_of_experience'
+            || /^education_(start|end)_/.test(kind)) {
             return new Promise((outerResolve) => {
                 enqueueCombobox(() => fillComboboxSimplify(el, wantRaw, {
                     kind,
                     aliases: [...new Set(aliases.filter(Boolean))],
                     maxAttempts: 3,
-                    minScore: kind === 'discipline' || kind === 'high_school_performance' ? 55 : 65
+                    minScore: kind === 'discipline' || kind === 'high_school_performance'
+                        || kind === 'skill_experience' || kind === 'years_of_experience'
+                        || /^education_(start|end)_/.test(kind)
+                        ? 55
+                        : 65
                 }).then((ok) => {
                     outerResolve(ok);
                     return ok;
@@ -4752,20 +5050,385 @@
         });
     }
 
+    function dropzoneAncestor(el) {
+        if (!el?.closest) return el?.parentElement || null;
+        return el.closest(
+            'label, [class*="drop"], [class*="upload"], [class*="file"], [class*="attach"], '
+            + '[class*="Document"], [data-testid*="resume"], [data-testid*="upload"], '
+            + 'fieldset, .field, .form-field, [class*="Field"], [class*="form-control"]'
+        ) || el.parentElement;
+    }
+
+    function nearbyUploadLabel(input) {
+        if (!input) return '';
+        const wrap = dropzoneAncestor(input);
+        return [
+            input.getAttribute('aria-label') || '',
+            input.getAttribute('title') || '',
+            input.id || '',
+            input.name || '',
+            wrap?.innerText || wrap?.textContent || ''
+        ].join(' ').replace(/\s+/g, ' ').trim().slice(0, 600);
+    }
+
     function fileInputKind(input) {
         const idHay = `${input.id || ''} ${input.name || ''}`.toLowerCase();
         if (/^cover_letter$|cover[\s_-]*letter/i.test(idHay)) return 'cover_letter';
         if (/^resume$|\bresum|\bcv\b/i.test(idHay)) return 'resume';
         const label = labelFor(input);
+        const nearby = nearbyUploadLabel(input);
         const kind = classifyPersonal(label, input.name || '', input.getAttribute('data-automation-id') || '');
-        const hay = `${label} ${input.name || ''}`.toLowerCase();
+        const hay = `${label} ${nearby} ${input.name || ''}`.toLowerCase();
         if (kind === 'cover_letter' || /\b(cover[\s_-]*letter|covering[\s_-]*letter|motivation[\s_-]*letter)\b/.test(hay)) {
             return 'cover_letter';
         }
-        if (kind === 'resume' || /\b(resume|cv|curriculum[\s_-]*vitae)\b/.test(hay)) {
+        if (kind === 'resume' || /\b(resume|r[ée]sum[eé]|cv|curriculum[\s_-]*vitae)\b/.test(hay)) {
             return 'resume';
         }
+        // Rippling / generic dropzones: "Drop or select (.doc / .docx / .pdf)" under Résumé*
+        if (/drop or select/i.test(nearby) && /\.docx?|\.pdf/i.test(nearby)) return 'resume';
         return 'other';
+    }
+
+    function listFileInputsForUpload() {
+        return [...document.querySelectorAll('input[type="file"]')].filter((el) => {
+            if (!el || el.disabled) return false;
+            const wrap = dropzoneAncestor(el);
+            if (wrap) {
+                const cr = wrap.getBoundingClientRect();
+                if (cr.width > 4 && cr.height > 4) return true;
+            }
+            const label = nearbyUploadLabel(el);
+            if (/\b(r[ée]sum[eé]|cv|curriculum)\b/i.test(label) || /drop or select|\.docx|\.pdf/i.test(label)) {
+                return true;
+            }
+            return visible(el);
+        });
+    }
+
+    function fileSlotLooksFilled(input) {
+        if (input?.files && input.files.length > 0) return true;
+        const wrap = dropzoneAncestor(input);
+        const t = String(wrap?.innerText || '').slice(0, 400);
+        return /\.(docx?|pdf)\b/i.test(t) && !/drop or select/i.test(t);
+    }
+
+    /** Recruiter-facing name: First_Last.docx — reject archive resume_* / timestamp names. */
+    function isCleanResumeUploadName(filename) {
+        const fn = String(filename || '').trim();
+        if (!fn) return false;
+        if (/^resume_/i.test(fn)) return false;
+        if (/^cover[_-]?letter_/i.test(fn)) return false;
+        if (/_\d{10,}\./.test(fn)) return false; // timestamp suffix
+        // First_Last.ext or First-Last.ext (1–3 name tokens)
+        return /^[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z][A-Za-z0-9]*){0,2}\.(docx?|pdf)$/i.test(fn);
+    }
+
+    function sanitizeResumeNameToken(name, maxLen = 40) {
+        let s = String(name || '').replace(/[^A-Za-z0-9]+/g, '_');
+        s = s.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        if (!s) return '';
+        if (s.length > maxLen) s = s.substring(0, maxLen).replace(/_+$/g, '');
+        return s;
+    }
+
+    /** Always First_Last.docx for ATS attach (never resume_…_Company_ts.docx). */
+    function buildCleanResumeUploadName(profileOrNames, fallbackFilename = '', ext = '.docx') {
+        const firstRaw = profileOrNames?.first_name
+            ?? profileOrNames?.firstName
+            ?? profileOrNames?.preferred_name
+            ?? '';
+        const lastRaw = profileOrNames?.last_name
+            ?? profileOrNames?.lastName
+            ?? '';
+        let first = sanitizeResumeNameToken(firstRaw);
+        let last = sanitizeResumeNameToken(lastRaw);
+        if (!first || !last) {
+            const fn = String(fallbackFilename || '').trim();
+            // resume_First_Last_Company_ts.docx — tolerate spaces in tokens
+            const m = fn.match(/^resume_([^_]+)_([^_]+)_/i)
+                || fn.match(/^resume[_-]+(.+?)[_-]+(.+?)[_-]+/i);
+            if (m) {
+                first = first || sanitizeResumeNameToken(m[1]) || 'Candidate';
+                last = last || sanitizeResumeNameToken(m[2]);
+            }
+        }
+        if (!first) first = 'Candidate';
+        const safeExt = (() => {
+            const fromFb = String(fallbackFilename || '').match(/\.(docx?|pdf)$/i);
+            if (fromFb) return fromFb[0].toLowerCase();
+            return String(ext || '.docx').startsWith('.') ? String(ext) : `.${ext}`;
+        })();
+        return last ? `${first}_${last}${safeExt}` : `${first}${safeExt}`;
+    }
+
+    /** Force any resume payload to a clean First_Last.docx File.name. */
+    function withCleanResumeFilename(resume, profile = null) {
+        if (!resume || !resume.base64) return resume;
+        const clean = buildCleanResumeUploadName(
+            profile || {},
+            resume.filename || resume.archiveFilename || ''
+        );
+        if (!clean || !isCleanResumeUploadName(clean)) {
+            return { ...resume, filename: 'Candidate.docx' };
+        }
+        return { ...resume, filename: clean };
+    }
+
+    function readResumeInputFilename(input) {
+        try {
+            if (input?.files?.[0]?.name) return String(input.files[0].name);
+        } catch (_) { /* ignore */ }
+        const wrap = dropzoneAncestor(input);
+        const t = String(wrap?.innerText || '').replace(/\s+/g, ' ').trim();
+        const m = t.match(/([A-Za-z0-9][A-Za-z0-9._-]{2,120}\.(docx?|pdf))\b/i);
+        return m ? m[1] : '';
+    }
+
+    function inspectResumeSlot(form) {
+        const inputs = listFileInputsForUpload().filter((i) => fileInputKind(i) !== 'cover_letter');
+        let filename = '';
+        let filled = false;
+        for (const input of inputs) {
+            if (!fileSlotLooksFilled(input)) continue;
+            filled = true;
+            filename = readResumeInputFilename(input) || filename;
+            if (filename) break;
+        }
+        // Fallback: form collect metadata
+        if (!filename && Array.isArray(form?.fileInputs)) {
+            const row = form.fileInputs.find((f) => {
+                const kind = String(f.kind || '');
+                const label = String(f.label || '');
+                if (/cover/i.test(kind) || /cover[\s_-]*letter/i.test(label)) return false;
+                return /resume|cv|r[ée]sum/i.test(`${kind} ${label}`) || kind === 'resume';
+            });
+            if (row?.fileName || row?.filename) filename = String(row.fileName || row.filename);
+            if (row?.filled || row?.hasFile) filled = true;
+        }
+        return {
+            filled,
+            filename,
+            nameOk: filled && isCleanResumeUploadName(filename),
+            resumeRequired: pageHasRequiredResumeSlot(form)
+        };
+    }
+
+    function requiredResumeFilled() {
+        return listFileInputsForUpload().some((i) => (
+            fileInputKind(i) !== 'cover_letter' && fileSlotLooksFilled(i)
+        ));
+    }
+
+    function pageHasRequiredResumeSlot(form) {
+        const fromCollect = (form?.fileInputs || []).some((f) => {
+            const kind = String(f.kind || '');
+            const label = String(f.label || '');
+            if (/cover/i.test(kind) || /cover[\s_-]*letter/i.test(label)) return false;
+            return !!f.required || /resume|cv|r[ée]sum/i.test(`${kind} ${label}`);
+        });
+        if (fromCollect) return true;
+        if (listFileInputsForUpload().some((i) => {
+            const kind = fileInputKind(i);
+            const label = nearbyUploadLabel(i);
+            return kind === 'resume' && (
+                i.required
+                || i.getAttribute('aria-required') === 'true'
+                || /\*/.test(label)
+            );
+        })) return true;
+        const body = String(document.body?.innerText || '').slice(0, 12000);
+        return /\br[ée]sum[eé]\s*\*/i.test(body)
+            && /drop or select|\.doc\s*\/\s*\.docx|accept.*\.(pdf|docx)/i.test(body);
+    }
+
+    function pageHasVisibleRequiredErrors() {
+        const nodes = document.querySelectorAll(
+            '[class*="error"], [role="alert"], [class*="invalid"], [class*="helper-text"], '
+            + '[class*="FieldError"], [data-testid*="error"], p, span, small'
+        );
+        let n = 0;
+        for (const el of nodes) {
+            if (++n > 250) break;
+            const t = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!t || t.length > 90) continue;
+            if (!/this field is required|^required$|is required\.?$/i.test(t)) continue;
+            const st = window.getComputedStyle(el);
+            if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) continue;
+            if (el.getClientRects().length === 0) continue;
+            return true;
+        }
+        return false;
+    }
+
+    function evaluateSubmitReadiness(form, fillStats = {}, uploadStats = {}) {
+        const missing = [...(fillStats.missingRequired || [])];
+        const resumeRequired = pageHasRequiredResumeSlot(form);
+        const slot = inspectResumeSlot(form);
+        const resumeOk = Number(uploadStats.uploadedResume || 0) > 0 || slot.filled || requiredResumeFilled();
+        const expectedName = String(
+            uploadStats.expectedResumeName
+            || fillStats.expectedResumeName
+            || ''
+        ).trim();
+        const nameOk = !resumeOk
+            ? false
+            : !!slot.nameOk;
+        if (resumeRequired && !resumeOk && !missing.some((m) => /r[ée]sum|cv\b/i.test(String(m)))) {
+            missing.push('Résumé');
+        }
+        if (resumeRequired && resumeOk && !nameOk
+            && !missing.some((m) => /resume name|cv name/i.test(String(m)))) {
+            missing.push('CV name');
+        }
+        const visibleRequiredErrors = pageHasVisibleRequiredErrors();
+        const fileRequiredCount = (form?.fileInputs || []).filter((f) => (
+            f.required && !/cover/i.test(String(f.kind || ''))
+        )).length;
+        const requiredTotal = Math.max(
+            Number(fillStats.requiredTotal || 0),
+            fileRequiredCount,
+            resumeRequired ? 1 : 0
+        );
+        const fieldsComplete = Number(fillStats.requiredTotal || 0) > 0
+            ? Number(fillStats.requiredOk || 0) === Number(fillStats.requiredTotal || 0)
+                && !(fillStats.missingRequired || []).length
+            : fillStats.requiredComplete !== false;
+        const requiredComplete = fieldsComplete
+            && !(resumeRequired && !resumeOk)
+            && !(resumeRequired && resumeOk && !nameOk)
+            && !visibleRequiredErrors;
+        return {
+            ok: requiredComplete,
+            reason: resumeRequired && !resumeOk
+                ? 'resume_required'
+                : (resumeRequired && resumeOk && !nameOk
+                    ? 'resume_name_invalid'
+                    : (visibleRequiredErrors
+                        ? 'visible_required_errors'
+                        : (requiredComplete ? 'ok' : 'required_incomplete'))),
+            missingRequired: missing,
+            requiredComplete,
+            requiredOk: requiredComplete
+                ? requiredTotal
+                : Math.max(0, requiredTotal - missing.length),
+            requiredTotal,
+            resumeRequired,
+            resumeOk,
+            resumeFilename: slot.filename || uploadStats.resumeFilename || '',
+            resumeNameOk: nameOk,
+            visibleRequiredErrors
+        };
+    }
+
+    /**
+     * Always verify CV before submit: file present + clean First_Last name.
+     * Re-uploads from payload when missing or when archive name (resume_*) is on the input.
+     */
+    async function ensureResumeReadyBeforeSubmit(form, payload = {}, uploadStats = {}) {
+        const profile = payload.profile || null;
+        const rawResume = payload.resume || (
+            payload.base64 && payload.filename
+                ? { filename: payload.filename, base64: payload.base64, mimeType: payload.mimeType }
+                : null
+        );
+        const resume = withCleanResumeFilename(rawResume, profile);
+        const expectedName = String(
+            resume?.filename
+            || payload.expectedResumeName
+            || uploadStats.expectedResumeName
+            || ''
+        ).trim();
+        let stats = {
+            ...uploadStats,
+            expectedResumeName: expectedName || uploadStats.expectedResumeName || '',
+            resumeFilename: expectedName || uploadStats.resumeFilename || ''
+        };
+        let slot = inspectResumeSlot(form);
+        const needsFile = pageHasRequiredResumeSlot(form) || !!resume?.base64;
+        if (!needsFile) {
+            return {
+                uploadStats: stats,
+                slot,
+                ok: true,
+                reason: 'resume_not_required'
+            };
+        }
+
+        const nameBad = !slot.filled || !isCleanResumeUploadName(slot.filename);
+        const shouldReupload = !!resume?.base64 && (
+            !slot.filled
+            || nameBad
+            || (expectedName && slot.filename && slot.filename !== expectedName)
+        );
+
+        if (shouldReupload) {
+            // Clear messy file first when present so Greenhouse shows the new name.
+            if (slot.filled && nameBad) {
+                try {
+                    for (const input of listFileInputsForUpload()) {
+                        if (fileInputKind(input) === 'cover_letter') continue;
+                        const wrap = dropzoneAncestor(input);
+                        const clearBtn = wrap?.querySelector?.(
+                            'button[aria-label*="remove" i], button[aria-label*="delete" i], '
+                            + 'button[aria-label*="clear" i], [data-testid*="remove"], .remove-file, a[href="#"]'
+                        );
+                        // Prefer visible "X" near filename
+                        const xBtn = [...(wrap?.querySelectorAll?.('button, a, span[role="button"]') || [])]
+                            .find((el) => {
+                                const t = String(el.textContent || '').trim();
+                                const al = String(el.getAttribute('aria-label') || '');
+                                return t === '×' || t === 'X' || t === 'x' || /remove|delete|clear/i.test(al);
+                            });
+                        (xBtn || clearBtn)?.click?.();
+                    }
+                    await new Promise((r) => setTimeout(r, 200));
+                } catch (_) { /* ignore */ }
+            }
+            const cleaned = withCleanResumeFilename({
+                ...resume,
+                filename: expectedName || resume.filename
+            }, profile);
+            const re = await uploadApplicationFiles({
+                ...payload,
+                profile,
+                resume: cleaned,
+                filename: cleaned.filename,
+                base64: cleaned.base64,
+                mimeType: cleaned.mimeType,
+                skipCoverLetter: true
+            });
+            stats = {
+                ...stats,
+                ...re,
+                uploadedResume: Math.max(
+                    Number(stats.uploadedResume || 0),
+                    Number(re.uploadedResume || 0)
+                ),
+                uploaded: Number(stats.uploaded || 0) + Number(re.uploaded || 0),
+                resumeFilename: cleaned.filename,
+                expectedResumeName: cleaned.filename,
+                resumeReuploaded: true
+            };
+            await new Promise((r) => setTimeout(r, 350));
+            slot = inspectResumeSlot(form);
+        }
+
+        const filled = slot.filled || Number(stats.uploadedResume || 0) > 0;
+        // DOM name must be clean — never trust intended name alone.
+        const nameOk = filled && isCleanResumeUploadName(slot.filename);
+        return {
+            uploadStats: {
+                ...stats,
+                resumeFilename: slot.filename || stats.resumeFilename || '',
+                resumeNameOk: nameOk
+            },
+            slot,
+            ok: filled && nameOk,
+            reason: !filled
+                ? 'resume_required'
+                : (nameOk ? 'ok' : 'resume_name_invalid')
+        };
     }
 
     async function uploadBlobToInput(input, { filename, base64, mimeType }) {
@@ -4783,6 +5446,12 @@
             input.files = dt.files;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
+            try {
+                const zone = dropzoneAncestor(input);
+                if (zone && zone !== input) {
+                    zone.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            } catch (_) { /* ignore */ }
             return true;
         } catch (err) {
             console.warn('[autofill] upload failed', err);
@@ -4796,18 +5465,25 @@
      * or when the payload has no real cover_letter_* file.
      */
     async function uploadApplicationFiles(payload = {}) {
-        const resume = payload.resume || (
-            payload.base64 && payload.filename
-                ? { filename: payload.filename, base64: payload.base64, mimeType: payload.mimeType }
-                : null
+        const profile = payload.profile || null;
+        const resume = withCleanResumeFilename(
+            payload.resume || (
+                payload.base64 && payload.filename
+                    ? { filename: payload.filename, base64: payload.base64, mimeType: payload.mimeType }
+                    : null
+            ),
+            profile
         );
         let coverLetter = payload.coverLetter || payload.cover_letter || null;
         const skipCoverLetter = !!payload.skipCoverLetter;
 
-        // Hard gate: never upload a resume_*.docx (or missing cover marker) into CL.
+        // Hard gate: never put a resume into a cover-letter slot.
+        // Refuse archive resume_* names and clean First_Last.docx without a cover marker.
         if (coverLetter?.filename) {
             const fn = String(coverLetter.filename);
-            if (/^resume_/i.test(fn) || !/cover/i.test(fn)) {
+            const looksLikeResumeArchive = /^resume_/i.test(fn);
+            const looksLikeCover = /cover/i.test(fn);
+            if (looksLikeResumeArchive || !looksLikeCover) {
                 console.warn('[autofill] refusing resume-like file for cover letter slot', fn);
                 coverLetter = null;
             }
@@ -4819,7 +5495,7 @@
         let uploadedCoverLetter = 0;
         let skippedCoverLetter = 0;
 
-        const inputs = [...document.querySelectorAll('input[type="file"]')].filter(visible);
+        const inputs = listFileInputsForUpload();
         for (const input of inputs) {
             const kind = fileInputKind(input);
             if (kind === 'cover_letter') {
@@ -4873,7 +5549,14 @@
             }
         }
 
-        return { uploaded, uploadedResume, uploadedCoverLetter, skippedCoverLetter };
+        return {
+            uploaded,
+            uploadedResume,
+            uploadedCoverLetter,
+            skippedCoverLetter,
+            resumeFilename: resume?.filename || '',
+            expectedResumeName: resume?.filename || ''
+        };
     }
 
     /** @deprecated use uploadApplicationFiles — kept as alias for callers */
@@ -4973,6 +5656,90 @@
         }
         humanClick(btn);
         return { clicked: true, label: (btn.innerText || btn.value || '').trim().slice(0, 80) };
+    }
+
+    // Keep in sync with extension/lib/jobClosedPage.js
+    const JOB_CLOSED_BANNER_RE = /the job you are looking for is no longer (?:open|available)|sorry[,.]? this job is no longer (?:open|available)|this job(?: posting)? is no longer (?:open|available)|the page you are looking for doesn['’]?t exist|the page you are looking for does not exist|this job cannot be viewed at this time|has either been deleted or is no longer available for application/i;
+    const JOB_CLOSED_HEADING_RE = /^(job not found|page not found|404|not found)$/i;
+    const JOB_LISTING_ONLY_RE = /\b\d+\s+jobs?\s+found\b|\bcurrent openings\b/i;
+
+    function collectJobClosedSignals() {
+        const form = pageLooksLikeApplyForm();
+        const fieldCount = Number(form?.count) || 0;
+        const alertText = Array.from(document.querySelectorAll(
+            '[role="alert"], .flash, .flash--error, .banner, .error, [class*="error-message"], [class*="Flash"]'
+        )).map((el) => (el.innerText || '').trim()).filter(Boolean).join(' ');
+        const headingText = Array.from(document.querySelectorAll('h1, h2'))
+            .slice(0, 4)
+            .map((el) => (el.innerText || '').trim())
+            .filter(Boolean)
+            .join('\n');
+        let httpStatus = 0;
+        try {
+            const nav = performance.getEntriesByType('navigation')[0];
+            if (nav && Number(nav.responseStatus) > 0) httpStatus = Number(nav.responseStatus);
+        } catch (_) { /* ignore */ }
+        return {
+            formReady: !!(form?.ok || fieldCount >= 2),
+            fieldCount,
+            alertText,
+            headingText,
+            title: document.title || '',
+            text: String(document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1200),
+            url: location.href || '',
+            httpStatus
+        };
+    }
+
+    function detectJobClosedPage() {
+        try {
+            const s = collectJobClosedSignals();
+            if (s.formReady) return { closed: false, reason: 'form_present', count: s.fieldCount };
+            let host = '';
+            let path = '';
+            let ghError = false;
+            let isLeverApi = false;
+            let isLeverApply = false;
+            let isAshby = false;
+            let isWorkday = false;
+            try {
+                const u = new URL(s.url);
+                host = (u.hostname || '').replace(/^www\./i, '');
+                path = u.pathname || '';
+                const err = u.searchParams.get('error');
+                ghError = /greenhouse\.io$/i.test(host) && (err === 'true' || err === '1');
+                isLeverApi = /(^|\.)api\.lever\.co$/i.test(host);
+                isLeverApply = /(^|\.)lever\.co$/i.test(host) && !isLeverApi;
+                isAshby = /ashbyhq\.com$/i.test(host);
+                isWorkday = /myworkdayjobs\.com$/i.test(host) || /\.workday\./i.test(host);
+            } catch (_) { /* ignore */ }
+            if (isLeverApi) return { closed: false, reason: 'lever_api_ignored' };
+            const listingOnly = JOB_LISTING_ONLY_RE.test(s.text)
+                && !JOB_CLOSED_BANNER_RE.test(s.alertText)
+                && !JOB_CLOSED_BANNER_RE.test(s.headingText)
+                && !JOB_CLOSED_BANNER_RE.test(s.text)
+                && !ghError;
+            if (listingOnly) return { closed: false, reason: 'listing_page' };
+            if (ghError) {
+                return { closed: true, match: 'error=true', snippet: s.url.slice(0, 160), via: 'greenhouse_error_url' };
+            }
+            if (isLeverApply && (s.httpStatus === 404 || s.httpStatus === 410)) {
+                return { closed: true, match: `HTTP ${s.httpStatus}`, snippet: s.url.slice(0, 160), via: 'lever_http' };
+            }
+            const blob = `${s.alertText} ${s.headingText} ${s.text}`.trim();
+            const m = blob.match(JOB_CLOSED_BANNER_RE);
+            if (m) {
+                const idx = Math.max(0, (m.index || 0) - 24);
+                return { closed: true, match: m[0], snippet: blob.slice(idx, idx + 160), via: 'banner' };
+            }
+            const headLine = String(s.headingText || s.title || '').split(/\n/)[0].trim();
+            if (JOB_CLOSED_HEADING_RE.test(headLine) && (isAshby || isLeverApply || isWorkday)) {
+                return { closed: true, match: headLine, snippet: headLine, via: 'heading' };
+            }
+            return { closed: false, host, path };
+        } catch (err) {
+            return { closed: false, error: err?.message || String(err) };
+        }
     }
 
     function pageLooksLikeApplyForm() {
@@ -5220,13 +5987,17 @@
                 const f = res.result || {};
                 const filled = Number(f.filled || 0);
                 const uploaded = Number(f.uploaded || 0);
-                const left = Number(f.questions || 0);
+                const left = Math.max(
+                    Number(f.missingRequired?.length || 0),
+                    Number(f.requiredTotal || 0) - Number(f.requiredOk || 0),
+                    Number(f.questions || 0)
+                );
                 api.setBusy(false, filled || uploaded
                     ? `Filled ${filled} · uploaded ${uploaded}. Review, then Answer questions if needed.`
                     : 'No fields filled — check profile / login', filled || uploaded ? 100 : 0);
                 api.setStats({ filled, files: uploaded, left });
                 showToast(
-                    `Autofilled ${filled}` + (left ? ` · ${left} need Answer questions` : ''),
+                    `Autofilled ${filled}` + (left ? ` · ${left} required left` : ''),
                     (filled + uploaded) > 0 ? 'ok' : 'error'
                 );
             });
@@ -5460,10 +6231,31 @@
             }
             return true;
         }
+        if (msg?.type === 'DETECT_JOB_CLOSED') {
+            try {
+                sendResponse({ ok: true, data: detectJobClosedPage() });
+            } catch (err) {
+                sendResponse({ ok: false, error: err?.message || String(err) });
+            }
+            return true;
+        }
         if (msg?.type === 'FILL_FORM') {
             (async () => {
                 try {
                     const form = collectForm();
+                    const fieldCount = (form.fields?.length || 0) + (form.fileInputs?.length || 0);
+                    const closed = fieldCount >= 2 ? { closed: false } : detectJobClosedPage();
+                    if (closed?.closed) {
+                        showToast('This job is no longer open', 'error');
+                        updateAutofillPanel({ status: 'Job expired — bid stopped', progress: 100 });
+                        sendResponse({
+                            ok: false,
+                            error: 'job_expired',
+                            jobExpired: true,
+                            snippet: closed.snippet || null
+                        });
+                        return;
+                    }
                     if (form.blocked) {
                         showToast(form.reason || 'Site blocked', 'error');
                         sendResponse({ ok: false, error: form.reason, ats: form.ats });
@@ -5514,29 +6306,86 @@
                         fields,
                         answers: msg.payload?.answers,
                         profile: msg.payload?.profile,
-                        jobDescription: msg.payload?.jobDescription || ''
+                        jobDescription: msg.payload?.jobDescription || '',
+                        companyName: msg.payload?.companyName || msg.payload?.company_name || '',
+                        jobRole: msg.payload?.jobRole || msg.payload?.job_role || '',
+                        skipQuestions: !!(msg.payload?.skipQuestions || msg.payload?.profileOnly)
                     });
                     const uploadStats = await uploadApplicationFiles(msg.payload || {});
+                    const resumeGate = await ensureResumeReadyBeforeSubmit(
+                        form,
+                        msg.payload || {},
+                        {
+                            ...uploadStats,
+                            expectedResumeName: msg.payload?.resume?.filename
+                                || msg.payload?.filename
+                                || msg.payload?.expectedResumeName
+                                || ''
+                        }
+                    );
+                    const gatedUploadStats = resumeGate.uploadStats || uploadStats;
+                    const readiness = evaluateSubmitReadiness(form, fillStats, gatedUploadStats);
+                    const mergedFillStats = {
+                        ...fillStats,
+                        requiredComplete: readiness.requiredComplete,
+                        requiredOk: readiness.requiredOk,
+                        requiredTotal: readiness.requiredTotal,
+                        missingRequired: readiness.missingRequired,
+                        incomplete: !readiness.requiredComplete,
+                        resumeRequired: readiness.resumeRequired,
+                        resumeOk: readiness.resumeOk,
+                        resumeFilename: readiness.resumeFilename,
+                        resumeNameOk: readiness.resumeNameOk,
+                        uploadedResume: gatedUploadStats.uploadedResume || 0,
+                        uploaded: gatedUploadStats.uploaded || 0,
+                        visibleRequiredErrors: readiness.visibleRequiredErrors
+                    };
                     let submitStats = { clicked: false };
                     if (msg.payload?.autoSubmit) {
-                        try {
-                            submitStats = await clickSubmitAsync({ waitEnabledMs: 3000 });
-                        } catch (_) {
-                            submitStats = clickSubmit();
+                        if (!readiness.ok || !resumeGate.ok) {
+                            const reason = !resumeGate.ok ? resumeGate.reason : readiness.reason;
+                            submitStats = {
+                                clicked: false,
+                                reason,
+                                missing: readiness.missingRequired,
+                                resumeFilename: readiness.resumeFilename || '',
+                                resumeNameOk: !!readiness.resumeNameOk
+                            };
+                            const toastMsg = reason === 'resume_name_invalid'
+                                ? `Submit blocked — CV name must be First_Last.docx (got ${readiness.resumeFilename || 'messy name'})`
+                                : reason === 'resume_required'
+                                    ? 'Submit blocked — CV missing'
+                                    : `Submit blocked — ${readiness.missingRequired.slice(0, 3).join(', ') || 'required fields empty'}`;
+                            showToast(toastMsg, 'error');
+                        } else {
+                            try {
+                                submitStats = await clickSubmitAsync({ waitEnabledMs: 3000 });
+                            } catch (_) {
+                                submitStats = clickSubmit();
+                            }
                         }
                     }
-                    const n = (fillStats.filled || 0) + (uploadStats.uploaded || 0);
-                    showToast(
-                        `Filled ${fillStats.filled || 0}, uploaded ${uploadStats.uploaded || 0}`,
-                        n > 0 ? 'ok' : 'error'
-                    );
+                    const n = (mergedFillStats.filled || 0) + (gatedUploadStats.uploaded || 0);
+                    if (!(msg.payload?.autoSubmit && (!readiness.ok || !resumeGate.ok))) {
+                        showToast(
+                            `Filled ${mergedFillStats.filled || 0}, uploaded ${gatedUploadStats.uploaded || 0}`
+                                + (readiness.resumeFilename ? ` · CV ${readiness.resumeFilename}` : ''),
+                            n > 0 ? 'ok' : 'error'
+                        );
+                    }
                     sendResponse({
                         ok: true,
                         ats: form.ats,
                         engine: msg.payload?.engine || 'autofill-engine-v3',
-                        fillStats,
-                        uploadStats,
-                        submitStats
+                        fillStats: mergedFillStats,
+                        uploadStats: gatedUploadStats,
+                        submitStats,
+                        resumeCheck: {
+                            ok: resumeGate.ok,
+                            reason: resumeGate.reason,
+                            filename: readiness.resumeFilename || '',
+                            nameOk: !!readiness.resumeNameOk
+                        }
                     });
                 } catch (err) {
                     if (isExtensionContextError(err)) {
@@ -5557,6 +6406,34 @@
         if (msg?.type === 'CLICK_SUBMIT') {
             (async () => {
                 try {
+                    // Never force past empty required / sponsorship / visible errors.
+                    // Instruct Lumi can pass instructForce to override.
+                    const instructForce = !!msg.instructForce;
+                    if (!instructForce) {
+                        const form = collectForm();
+                        const readiness = evaluateSubmitReadiness(form, {}, {
+                            uploadedResume: requiredResumeFilled() ? 1 : 0
+                        });
+                        const emptySponsor = (form.fields || []).some((f) => {
+                            if (f.kind !== 'requires_sponsorship' && !labelLooksLikeSponsorship(f.label || '')) {
+                                return false;
+                            }
+                            const el = findElByField(f);
+                            const got = readFieldCurrent(f, el);
+                            return !got || !String(got).trim() || /^select(\.\.\.|…|:)?$/i.test(String(got).trim());
+                        });
+                        if (!readiness.ok || emptySponsor || readiness.visibleRequiredErrors) {
+                            sendResponse({
+                                ok: true,
+                                clicked: false,
+                                reason: emptySponsor
+                                    ? 'sponsorship_empty'
+                                    : (readiness.reason || 'required_incomplete'),
+                                missing: readiness.missingRequired
+                            });
+                            return;
+                        }
+                    }
                     const result = await clickSubmitAsync({ waitEnabledMs: 3200 });
                     sendResponse({ ok: true, ...result });
                 } catch (err) {

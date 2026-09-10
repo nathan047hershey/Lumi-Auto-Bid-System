@@ -1,0 +1,11 @@
+{
+  "engine": "bidder-engine-v1",
+  "filled": 21,
+  "requiredComplete": false,
+  "incomplete": true,
+  "missing": [
+    "Phone*",
+    "Do you live in one of the following states? Arizona, Arkansas, California, Colorado, Delaware, Florida, Georgia, Illinoi",
+    "Do you have deep hands-on engineering experience with certificate lifecycle management, PKI, machine identity, or relate"
+  ]
+}

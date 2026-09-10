@@ -7,8 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { SelectField } from '@/components/ui/SelectField';
 import LumiBidderSettings from '@/components/LumiBidderSettings';
+import OutlookMailSettings from '@/components/OutlookMailSettings';
 
 const PROVIDER_OPTIONS = [
     { value: 'minimax', label: 'MiniMax (default)' },
@@ -131,22 +133,25 @@ function AdminSettings() {
     const handleSaveGroqKey = async () => {
         const trimmed = groqDraft.trim();
         if (!trimmed) {
-            setError('Paste a Groq API key first.');
+            setError('Paste Groq API key(s) first (gsk_…).');
             return;
         }
+        const countHint = trimmed.split(/[\r\n,]+/).map((s) => s.trim()).filter(Boolean).length;
         try {
             setSaving(true);
             setError(null);
             setSuccess(null);
             const { data } = await adminAPI.updateSettings({
-                ai_provider: 'groq',
                 groq_api_keys: trimmed,
                 groq_keys_replace: false
             });
             applySettings(data);
             setGroqDraft('');
-            setSuccess(`Groq key saved to local.env (${data.groq_keys?.count || 0} total). Groq is now active.`);
-            setTimeout(() => setSuccess(null), 5000);
+            setSuccess(
+                `Saved ${countHint} key(s) → ${data.groq_keys?.count || 0} total in server/local.env. `
+                + 'Autofill uses Groq (openai/gpt-oss-20b); CVs stay MiniMax. Restart API if env was empty before.'
+            );
+            setTimeout(() => setSuccess(null), 7000);
         } catch (err) {
             console.error('Failed to save Groq key:', err);
             setError(err.response?.data?.error || 'Failed to save Groq key');
@@ -267,9 +272,9 @@ function AdminSettings() {
                             <div>
                                 <CardTitle>API keys</CardTitle>
                                 <CardDescription>
-                                    MiniMax generates CVs and drafts form answers. Groq checks weak drafts,
-                                    rescues empty/hard fields, and checkouts the filled application before
-                                    auto-submit (blocks submit when critical issues remain).
+                                    MiniMax-M2.7 generates CVs. Autofill and Auto Bidder try MiniMax
+                                    first, then Groq if MiniMax fails. New / unclassified question types
+                                    go to Groq immediately. Groq also checks weak drafts before auto-submit.
                                 </CardDescription>
                             </div>
                         </div>
@@ -317,10 +322,8 @@ function AdminSettings() {
                                                 {' · '}
                                             </>
                                         ) : null}
-                                        CV:{' '}
-                                        {settings?.ai_provider === 'groq'
-                                            ? `Groq · ${gq?.count || 0} key${(gq?.count || 0) === 1 ? '' : 's'}`
-                                            : `MiniMax Key ${minimaxSlot}`}
+                                        CV: MiniMax-M2.7
+                                        {minimaxSlot ? ` · Key ${minimaxSlot}` : ''}
                                     </div>
                                     <Button
                                         type="button"
@@ -334,40 +337,56 @@ function AdminSettings() {
 
                                 <div className="space-y-3 rounded-lg border border-border p-4">
                                     <div>
-                                        <div className="font-medium text-sm">Add Groq key</div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            Saves to <code>server/local.env</code> as{' '}
-                                            <code>GROQ_API_KEY_1</code>…. One key per save — use separate
-                                            Groq accounts so free daily limits stack.
+                                        <div className="font-medium text-sm">Save Groq keys</div>
+                                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                                            Groq shows each <code>gsk_…</code> key <strong>once</strong> at{' '}
+                                            <a
+                                                className="underline underline-offset-2"
+                                                href="https://console.groq.com/keys"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                console.groq.com/keys
+                                            </a>
+                                            . Copy immediately → paste here (or into a password manager first).
+                                            We write them to gitignored <code>server/local.env</code>.
+                                            {' '}For stacked free limits use <strong>separate Google/org accounts</strong>
+                                            — Groq{' '}
+                                            <a
+                                                className="underline underline-offset-2"
+                                                href="https://console.groq.com/docs/projects"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                            >
+                                                Projects
+                                            </a>
+                                            {' '}organize keys but do <strong>not</strong> multiply org quota.
                                         </p>
                                     </div>
-                                    <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                                        <div className="space-y-1.5">
-                                            <Label htmlFor="groq_key_paste">Groq API key</Label>
-                                            <Input
-                                                id="groq_key_paste"
-                                                type="password"
-                                                autoComplete="off"
-                                                value={groqDraft}
-                                                onChange={(e) => setGroqDraft(e.target.value)}
-                                                placeholder="gsk_…"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        handleSaveGroqKey();
-                                                    }
-                                                }}
-                                            />
-                                        </div>
-                                        <Button type="button" disabled={saving} onClick={handleSaveGroqKey}>
-                                            {saving ? (
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            ) : (
-                                                <Save className="mr-2 h-4 w-4" />
-                                            )}
-                                            Add Groq key
-                                        </Button>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="groq_key_paste">Paste one or more keys</Label>
+                                        <Textarea
+                                            id="groq_key_paste"
+                                            autoComplete="off"
+                                            value={groqDraft}
+                                            onChange={(e) => setGroqDraft(e.target.value)}
+                                            placeholder={'gsk_…\ngsk_…\ngsk_…'}
+                                            rows={4}
+                                            className="font-mono text-xs"
+                                        />
+                                        <p className="text-[11px] text-muted-foreground">
+                                            Newline or comma separated. Up to 20 keys. Autofill model:{' '}
+                                            <code>openai/gpt-oss-20b</code> (1k RPD / 200k TPD per org).
+                                        </p>
                                     </div>
+                                    <Button type="button" disabled={saving} onClick={handleSaveGroqKey}>
+                                        {saving ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Save className="mr-2 h-4 w-4" />
+                                        )}
+                                        Save Groq key(s)
+                                    </Button>
 
                                     {gq?.keys?.length > 0 ? (
                                         <ul className="space-y-1">
@@ -578,6 +597,18 @@ function AdminSettings() {
                     </CardHeader>
                     <CardContent>
                         <LumiBidderSettings showTitle={false} showProfileAutofillHint />
+                    </CardContent>
+                </Card>
+
+                <Card id="mailboxes">
+                    <CardHeader>
+                        <CardTitle>Mailboxes</CardTitle>
+                        <CardDescription>
+                            Connect email accounts to receive OTP codes from Greenhouse during auto-bidding
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <OutlookMailSettings />
                     </CardContent>
                 </Card>
             </div>

@@ -6,17 +6,21 @@
 export function detectAtsFromUrl(url) {
     const u = String(url || '').toLowerCase();
     if (!u) return { id: 'generic', label: 'Generic / custom ATS' };
-    if (/greenhouse\.io/i.test(u)) return { id: 'greenhouse', label: 'Greenhouse' };
+    if (/greenhouse\.io/i.test(u) || /[?&]gh_jid=/i.test(u)) {
+        return { id: 'greenhouse', label: 'Greenhouse' };
+    }
     if (/oraclecloud\.com|\.oracle\.com\/hcm|fa\.[a-z0-9]+\.oraclecloud/i.test(u)) {
         return { id: 'oracle', label: 'Oracle Cloud HCM' };
     }
     if (/myworkdayjobs\.com|workdayjobs\.com|\/workday/i.test(u)) return { id: 'workday', label: 'Workday' };
     if (/lever\.co/i.test(u)) return { id: 'lever', label: 'Lever' };
     if (/ashbyhq\.com/i.test(u)) return { id: 'ashby', label: 'Ashby' };
+    if (/jobs\.gem\.com/i.test(u)) return { id: 'gem', label: 'Gem' };
     if (/linkedin\.com/i.test(u)) return { id: 'linkedin', label: 'LinkedIn' };
     if (/icims\.com/i.test(u)) return { id: 'icims', label: 'iCIMS' };
     if (/smartrecruiters\.com/i.test(u)) return { id: 'smartrecruiters', label: 'SmartRecruiters' };
     if (/bamboohr\.com/i.test(u)) return { id: 'bamboohr', label: 'BambooHR' };
+    if (/rippling\.com/i.test(u)) return { id: 'rippling', label: 'Rippling' };
     return { id: 'generic', label: 'Generic / custom ATS' };
 }
 
@@ -41,7 +45,8 @@ export function ashbyApplicationUrl(url) {
 }
 
 export function isGreenhouseUrl(url) {
-    return /greenhouse\.io/i.test(String(url || ''));
+    const u = String(url || '');
+    return /greenhouse\.io/i.test(u) || /[?&]gh_jid=/i.test(u);
 }
 
 /**

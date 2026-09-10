@@ -28,6 +28,7 @@ import BidInsights from './pages/user/BidInsights';
 import Analyze from './pages/user/Analyze';
 import BidCourses from './pages/user/BidCourses';
 import CvQualityReport from './pages/user/CvQualityReport';
+import Inbox from './pages/user/Inbox';
 import CallerDashboard from './pages/caller/CallerDashboard';
 import CallerProfile from './pages/caller/CallerProfile';
 import ManagerDashboard from './pages/manager/Dashboard';
@@ -177,6 +178,7 @@ function App() {
                 <Route path="templates/:templateId" element={<ResumeTemplateBuilder />} />
                 <Route path="autofill-settings" element={<AutofillSettingsPage />} />
                 <Route path="settings" element={<AccountSettings />} />
+                <Route path="inbox" element={<Inbox />} />
             </Route>
 
             {/* Caller Routes */}

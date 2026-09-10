@@ -21,6 +21,10 @@
 #   • Ashby       — public JSON API at
 #                    api.ashbyhq.com/posting-api/job-board/<board>.
 #                    No auth, no Playwright needed.
+#   • Gem         — jobs.gem.com/<board>/<extId>; SPA shell only.
+#                    Uses GraphQL batch POST
+#                    jobs.gem.com/api/public/graphql/batch (header
+#                    batch: true), with REST board list fallback.
 #   • iCIMS       — Playwright render of the public career site with
 #                    `?in_iframe=1`. iCIMS hides the job DOM behind a
 #                    client-side iFrame loader unless you ask for the
@@ -511,15 +515,70 @@ GH_BOARD_PATH = _re.compile(
 )
 # JobRight / iframe embeds: .../embed/job_app?for=<board>&token=<jobId>
 GH_EMBED_QUERY = _re.compile(
-    r"(?:[?&](?:for|board)=([^&]+)).*(?:[?&](?:token|gh_jid|job_id)=(\d+))"
-    r"|(?:[?&](?:token|gh_jid|job_id)=(\d+)).*(?:[?&](?:for|board)=([^&]+))",
+    r"(?:[?&](?:for|board)=([^&]+)).*(?:[?&](?:token|gh_jid|job_id)=(-?\d+))"
+    r"|(?:[?&](?:token|gh_jid|job_id)=(-?\d+)).*(?:[?&](?:for|board)=([^&]+))",
     _re.I,
 )
+# Company career wrappers (ZoomInfo): ?gh_jid=-8486808002 without a board token
+GH_JID_ONLY = _re.compile(r"[?&](?:token|gh_jid|job_id)=(-?\d+)", _re.I)
+GH_HOST_BOARDS = {
+    "zoominfo.com": "zoominfo",
+}
+GH_CAREER_SUBDOMAINS = {
+    "www", "careers", "jobs", "apply", "recruiting", "talent", "boards", "go",
+}
+
+
+def _normalize_greenhouse_job_id(raw: str | None) -> str | None:
+    digits = _re.sub(r"\D", "", raw or "")
+    return digits if len(digits) >= 5 else None
+
+
+def _infer_greenhouse_board(host: str) -> str | None:
+    host = (host or "").lower().rstrip(".")
+    if not host or host.endswith("greenhouse.io"):
+        return None
+    if host in GH_HOST_BOARDS:
+        return GH_HOST_BOARDS[host]
+    no_www = host[4:] if host.startswith("www.") else host
+    if no_www in GH_HOST_BOARDS:
+        return GH_HOST_BOARDS[no_www]
+    parts = no_www.split(".")
+    if len(parts) < 2:
+        return None
+    if parts[0] in GH_CAREER_SUBDOMAINS and len(parts) >= 3:
+        return parts[1]
+    return parts[0] or None
+
+
+def _parse_greenhouse_url(url: str, host: str) -> tuple[str | None, str | None, bool]:
+    """Return (board, job_id, inferred). inferred=True for company ?gh_jid= pages."""
+    m = GH_BOARD_PATH.search(url)
+    if m and m.group(2).lower() != "embed":
+        return m.group(2), m.group(3), False
+    if "greenhouse.io" in (host or ""):
+        em = GH_EMBED_QUERY.search(url)
+        if em:
+            board = em.group(1) or em.group(4)
+            job_id = _normalize_greenhouse_job_id(em.group(2) or em.group(3))
+            if board and job_id:
+                return board, job_id, False
+    jid = GH_JID_ONLY.search(url)
+    if jid:
+        job_id = _normalize_greenhouse_job_id(jid.group(1))
+        board = _infer_greenhouse_board(host)
+        if board and job_id:
+            return board, job_id, True
+    return None, None, False
 GH_LEVER_HOST = "lever.co"
 LEVER_PATH = _re.compile(r"lever\.co/([^/]+)(?:$|/)", _re.I)
 # Ashby: jobs.ashbyhq.com/<board>/<uuid>
 ASHBY_HOST = "ashbyhq.com"
 ASHBY_PATH = _re.compile(r"jobs\.ashbyhq\.com/([^/]+)/([0-9a-f-]{8,})", _re.I)
+
+# Gem: jobs.gem.com/<board>/<extId>
+GEM_HOST = "jobs.gem.com"
+GEM_PATH = _re.compile(r"jobs\.gem\.com/([^/?#]+)/([^/?#]+)", _re.I)
 # iCIMS: careers-<org>.icims.com/jobs/<id>/<slug>/...
 # Job ID is captured from the path; the slug is ignored. We need the
 # URL pre-stripped of any trailing /apply or /login segments so
@@ -756,6 +815,123 @@ def _fetch_ashby(url: str, host: str, board: str, posting_id: str) -> dict | Non
         "description": _strip_html(
             pick.get("descriptionPlain") or pick.get("descriptionHtml") or ""
         ),
+        "auth_wall": False,
+    }
+
+
+def _fetch_gem(url: str, host: str, board_id: str, ext_id: str) -> dict | None:
+    """Pull JD from Gem's public GraphQL batch API.
+
+    Public URL: https://jobs.gem.com/<board>/<extId>
+    Endpoint:   POST https://jobs.gem.com/api/public/graphql/batch
+    Requires header batch: true (SPA HTML alone has no job body).
+    """
+    endpoint = "https://jobs.gem.com/api/public/graphql/batch"
+    payload = [{
+        "operationName": "ExternalJobPostingQuery",
+        "variables": {"boardId": board_id, "extId": ext_id},
+        "query": (
+            "query ExternalJobPostingQuery($boardId: String!, $extId: String!) {\n"
+            "  oatsExternalJobPosting(boardId: $boardId, extId: $extId) {\n"
+            "    id title descriptionHtml extId\n"
+            "    locations { id name city isoCountry isRemote }\n"
+            "    job { id department { id name } locationType employmentType }\n"
+            "    jobPostSectionHtml { introHtml outroHtml }\n"
+            "    compensationHtml\n"
+            "  }\n"
+            "  jobBoardExternal(vanityUrlPath: $boardId) {\n"
+            "    id teamDisplayName pageTitle\n"
+            "  }\n"
+            "}"
+        ),
+    }]
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "batch": "true",
+        "Origin": "https://jobs.gem.com",
+        "Referer": f"https://jobs.gem.com/{board_id}/{ext_id}",
+    }
+    try:
+        import requests as _requests
+        res = _requests.post(endpoint, json=payload, headers=headers, timeout=45)
+    except Exception as exc:
+        log.info("Gem GraphQL failed for %s/%s: %s", board_id, ext_id, exc)
+        return None
+    if res.status_code != 200:
+        log.info("Gem GraphQL status %s for %s/%s", res.status_code, board_id, ext_id)
+        return None
+    raw = res.json()
+    envelopes = raw if isinstance(raw, list) else ([raw] if raw else [])
+    env = next(
+        (e for e in envelopes if isinstance(e, dict) and (e.get("data") or {}).get("oatsExternalJobPosting")),
+        envelopes[0] if envelopes else None,
+    )
+    data = (env or {}).get("data") or {}
+    posting = data.get("oatsExternalJobPosting") or {}
+    if not posting or not posting.get("title"):
+        # REST fallback — list board posts and match extId / absolute_url.
+        try:
+            rest = _http_get_json(
+                f"https://api.gem.com/job_board/v0/{_urlparse.quote(board_id)}/job_posts/"
+            )
+        except Exception:
+            rest = None
+        if isinstance(rest, list):
+            pick = next(
+                (
+                    j for j in rest
+                    if isinstance(j, dict) and (
+                        ext_id in str(j.get("absolute_url") or "")
+                        or str(j.get("id") or "") == ext_id
+                        or str(j.get("external_id") or "") == ext_id
+                    )
+                ),
+                None,
+            )
+            if pick:
+                desc = _strip_html(pick.get("content") or pick.get("description") or "")
+                if desc and len(desc) >= 40:
+                    company = (board_id or "").replace("-", " ").title()
+                    return {
+                        "position_title": (pick.get("title") or pick.get("name") or "").strip() or None,
+                        "company_name": company or None,
+                        "location": pick.get("location") or None,
+                        "description": desc,
+                        "auth_wall": False,
+                    }
+        return None
+
+    board_meta = data.get("jobBoardExternal") or {}
+    sections = posting.get("jobPostSectionHtml") or {}
+    html_parts = "\n".join(
+        p for p in (
+            sections.get("introHtml"),
+            posting.get("descriptionHtml"),
+            posting.get("compensationHtml"),
+            sections.get("outroHtml"),
+        ) if p
+    )
+    desc = _strip_html(html_parts)
+    if not desc or len(desc) < 40:
+        return None
+    locs = posting.get("locations") or []
+    location_bits = [
+        (l.get("name") or l.get("city") or "").strip()
+        for l in locs if isinstance(l, dict)
+    ]
+    location = "; ".join(b for b in location_bits if b) or None
+    if not location and any(isinstance(l, dict) and l.get("isRemote") for l in locs):
+        location = "Remote"
+    company = (board_meta.get("teamDisplayName") or board_meta.get("pageTitle") or "")
+    company = _re.sub(r"\s+careers$", "", company, flags=_re.I).strip()
+    if not company:
+        company = (board_id or "").replace("-", " ").title()
+    return {
+        "position_title": (posting.get("title") or "").strip() or None,
+        "company_name": company or None,
+        "location": location,
+        "description": desc,
         "auth_wall": False,
     }
 
@@ -1658,6 +1834,7 @@ PUBLIC_ATS_PROVIDERS = (
     ("greenhouse.io", _fetch_greenhouse),
     (GH_LEVER_HOST, _fetch_lever),
     (ASHBY_HOST, _fetch_ashby),
+    (GEM_HOST, _fetch_gem),
     (ICIMS_HOST, _fetch_icims),
     (JOBVITE_HOST, _fetch_jobvite),
     (SUCCESSFACTORS_HOST, _fetch_successfactors),
@@ -1673,29 +1850,24 @@ def fetch_public_ats_data(url: str) -> dict | None:
     if not host:
         return None
 
-    # Greenhouse (classic /jobs/<id> or embed?for=&token=)
-    board_token = None
-    job_id = None
-    m = GH_BOARD_PATH.search(url)
-    if m and m.group(2).lower() != "embed":
-        board_token = m.group(2)
-        job_id = m.group(3)
-    elif "greenhouse.io" in host:
-        em = GH_EMBED_QUERY.search(url)
-        if em:
-            board_token = em.group(1) or em.group(4)
-            job_id = em.group(2) or em.group(3)
+    # Greenhouse (classic /jobs/<id>, embed?for=&token=, or company ?gh_jid=)
+    board_token, job_id, inferred = _parse_greenhouse_url(url, host)
     if board_token and job_id:
         result = _fetch_greenhouse(url, host, board_token, job_id)
         if result:
             return result
+        err = (
+            f"greenhouse-inferred-job-not-found: board={board_token} job={job_id}"
+            if inferred
+            else f"greenhouse-job-not-found: board={board_token} job={job_id}"
+        )
         return {
             "auth_wall": False,
             "position_title": None,
             "company_name": None,
             "location": None,
             "description": None,
-            "error": f"greenhouse-job-not-found: board={board_token} job={job_id}",
+            "error": err,
         }
 
     # Lever — collapse /apply?utm=... → posting page before API match.
@@ -1706,14 +1878,9 @@ def fetch_public_ats_data(url: str) -> dict | None:
         result = _fetch_lever(lever_url, host, company)
         if result:
             return result
-        return {
-            "auth_wall": False,
-            "position_title": None,
-            "company_name": None,
-            "location": None,
-            "description": None,
-            "error": f"lever-job-not-found: company={company}",
-        }
+        # EU / regional Lever boards often 404 on api.lever.co.
+        # Fall through so the posting HTML (no /apply) can be scraped.
+        return None
 
     # Ashby
     m = ASHBY_PATH.search(url)
@@ -1731,6 +1898,24 @@ def fetch_public_ats_data(url: str) -> dict | None:
             "description": None,
             "error": f"ashby-job-not-found: board={board} id={posting_id}",
         }
+
+    # Gem careers (jobs.gem.com/<board>/<extId>) — SPA; need GraphQL.
+    m = GEM_PATH.search(url)
+    if m:
+        board_id = m.group(1)
+        ext_id = m.group(2)
+        if board_id.lower() not in ("api", "static", "assets"):
+            result = _fetch_gem(url, host, board_id, ext_id)
+            if result:
+                return result
+            return {
+                "auth_wall": False,
+                "position_title": None,
+                "company_name": None,
+                "location": None,
+                "description": None,
+                "error": f"gem-posting-not-found: board={board_id} id={ext_id}",
+            }
 
     # iCIMS
     if ICIMS_PATH.search(url):
@@ -1799,6 +1984,22 @@ def fetch_job_data(url: str) -> dict | None:
     if SUCCESSFACTORS_PATH.search(url):
         return _fetch_successfactors(url, _host_of(url) or "")
     host = _host_of(url)
+    # Company career pages that wrap Greenhouse (?gh_jid= on zoominfo.com, etc.)
+    board_token, job_id, inferred = _parse_greenhouse_url(url, host or "")
+    if board_token and job_id and "greenhouse.io" not in (host or ""):
+        result = _fetch_greenhouse(url, host or "", board_token, job_id)
+        if result and len((result.get("description") or "").strip()) >= 80:
+            return result
+        if not inferred:
+            return {
+                "auth_wall": False,
+                "position_title": None,
+                "company_name": None,
+                "location": None,
+                "description": None,
+                "error": f"greenhouse-job-not-found: board={board_token} job={job_id}",
+            }
+        # Wrong inferred board — fall through to generic HTML.
     if "linkedin.com" in host:
         return fetch_linkedin_job_data(url)
     # Lever /apply is form-only; JD lives on the posting page.
@@ -1852,6 +2053,7 @@ def fetch_job_data(url: str) -> dict | None:
             "greenhouse.io",
             "lever.co",
             "ashbyhq.com",
+            "jobs.gem.com",
         )
         if any(h in host_l for h in definitive_api_hosts):
             return {
@@ -2371,6 +2573,7 @@ def scrape() -> Any:
         or "greenhouse.io" in host
         or "lever.co" in host
         or "ashbyhq.com" in host
+        or "jobs.gem.com" in host
         or "icims.com" in host
         or "jobvite.com" in host
         or "myworkdayjobs.com" in host

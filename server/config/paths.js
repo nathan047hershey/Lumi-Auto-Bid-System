@@ -62,10 +62,14 @@ function resolveDataRoot() {
 const DATA_ROOT = resolveDataRoot();
 const DB_PATH = path.join(DATA_ROOT, 'database.sqlite');
 const RESUMES_DIR = path.join(DATA_ROOT, 'resumes');
+/** Clean upload copies: First_Last.docx (overwritten per profile on generate). */
+const RESUMES_READY_DIR = path.join(RESUMES_DIR, 'ready');
+/** Per-download unique folders: Company__FullName__Title__time/First_Last.docx */
+const RESUMES_PACKAGES_DIR = path.join(RESUMES_DIR, 'packages');
 const BIDDER_DIR = path.join(DATA_ROOT, 'bidder');
 const TMP_DIR = path.join(DATA_ROOT, 'tmp');
 
-for (const dir of [RESUMES_DIR, BIDDER_DIR, TMP_DIR]) {
+for (const dir of [RESUMES_DIR, RESUMES_READY_DIR, RESUMES_PACKAGES_DIR, BIDDER_DIR, TMP_DIR]) {
     tryEnsureDir(dir);
 }
 
@@ -138,6 +142,8 @@ module.exports = {
     DATA_ROOT,
     DB_PATH,
     RESUMES_DIR,
+    RESUMES_READY_DIR,
+    RESUMES_PACKAGES_DIR,
     BIDDER_DIR,
     TMP_DIR,
     SERVER_DIR,

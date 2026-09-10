@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const templateRenderer = require('./templateRenderer');
 const templateService = require('./templateService');
+const { asNodeBuffer } = require('../utils/asNodeBuffer');
 
 let browserInstance = null;
 
@@ -132,7 +133,7 @@ async function writePdfAlongsideDocx({
     try {
         const pdfBuffer = await renderResumePdfBuffer({ resumeHtml, styleSpec, font });
         const pdfFilename = docxFilenameToPdfFilename(docxFilename);
-        fs.writeFileSync(path.join(resumesDir, pdfFilename), pdfBuffer);
+        fs.writeFileSync(path.join(resumesDir, pdfFilename), await asNodeBuffer(pdfBuffer));
         return pdfFilename;
     } catch (err) {
         console.warn('[resumePdf] could not write PDF alongside DOCX:', err.message);

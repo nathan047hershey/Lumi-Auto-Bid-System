@@ -51,6 +51,45 @@ function writeJson(applicationId, filename, obj) {
     return writeText(applicationId, filename, JSON.stringify(obj, null, 2));
 }
 
+function readText(applicationId, filename) {
+    const roots = [];
+    try {
+        const { root } = resolveRoot();
+        roots.push(root);
+    } catch (_) { /* ignore */ }
+    roots.push(DEFAULT_ROOT, FALLBACK_ROOT);
+    const seen = new Set();
+    for (const root of roots) {
+        if (!root || seen.has(root)) continue;
+        seen.add(root);
+        const fp = path.join(root, String(applicationId), String(filename));
+        if (fs.existsSync(fp)) {
+            try {
+                return fs.readFileSync(fp, 'utf8');
+            } catch (_) { /* try next */ }
+        }
+    }
+    return null;
+}
+
+function readJson(applicationId, filename) {
+    const raw = readText(applicationId, filename);
+    if (raw == null || !String(raw).trim()) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+/** Load previously saved bidder answers for an application (artifact file). */
+function readAnswers(applicationId) {
+    const parsed = readJson(applicationId, 'answers.json');
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.answers)) return parsed.answers;
+    return [];
+}
+
 function saveScreenshot(applicationId, stage, base64OrBuffer) {
     const { shots, fallback } = courseDir(applicationId);
     const safe = String(stage || 'shot').replace(/[^\w.-]+/g, '_').slice(0, 64);
@@ -134,6 +173,9 @@ module.exports = {
     courseDir,
     writeText,
     writeJson,
+    readText,
+    readJson,
+    readAnswers,
     saveScreenshot,
     copyResume,
     saveCoursePackage,

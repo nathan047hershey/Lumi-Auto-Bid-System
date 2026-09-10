@@ -8,7 +8,8 @@
 // pasted value.
 //
 // Groq supports many pasted keys (JSON array in `groq_api_keys`, up to MAX_GROQ_KEYS).
-// Use separate Groq orgs/accounts so free-tier RPD stacks. Active index: `groq_key_slot`.
+// Use separate Groq orgs/accounts so free-tier RPD/TPD stacks. Active index: `groq_key_slot`.
+// Autofill answers default to Groq; CV generation stays on MiniMax.
 
 const { getOne, runQuery } = require('../config/database');
 const { writeGroqKeysToLocalEnv } = require('../utils/localEnvFile');
@@ -30,8 +31,10 @@ const PROVIDER_CONFIG = {
     groq: {
         apiKeyEnv: 'GROQ_API_KEY',
         apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-        // llama-3.3-70b-versatile shut down for free/dev tiers (Aug 2026).
-        defaultModel: 'openai/gpt-oss-120b'
+        // llama-3.1-8b-instant shut down for self-serve on 2026-08-16 (Enterprise-only).
+        // Replacement: openai/gpt-oss-20b (free tier ~1k RPD / 200k TPD per org).
+        // Stack multiple Groq orgs via GROQ_API_KEY_* to absorb autofill volume.
+        defaultModel: 'openai/gpt-oss-20b'
     }
 };
 
@@ -696,16 +699,19 @@ function getAlternateMinimaxConfig(failedSlot, overrides) {
  */
 function getAlternateGroqConfig(failedSlot, overrides) {
     const keys = listResolvedGroqKeys();
-    if (keys.length < 2) return null;
+    if (!keys.length) return null;
     const failed = Number(failedSlot) || 1;
-    for (let step = 1; step < keys.length; step++) {
+    for (let step = 1; step <= keys.length; step++) {
         const slot = ((failed - 1 + step) % keys.length) + 1;
+        if (slot === failed && keys.length > 1) continue;
+        const row = keys[slot - 1];
+        if (!looksLikeGroqKey(row?.apiKey)) continue;
         try {
             const cfg = getProviderConfig('groq', {
                 ...(overrides || {}),
                 groqKeySlot: slot
             });
-            if (cfg?.apiKey) return cfg;
+            if (cfg?.apiKey && looksLikeGroqKey(cfg.apiKey)) return cfg;
         } catch (_) { /* try next */ }
     }
     return null;
@@ -724,6 +730,28 @@ function isMinimaxQuotaError(error) {
     return /usage limit|rate limit|quota|token plan|2056|insufficient/i.test(msg);
 }
 
+function isNetworkOrTimeoutError(error) {
+    const blob = `${error?.code || ''} ${error?.message || ''} ${error?.upstreamMessage || ''}`;
+    return /timeout|ETIMEDOUT|ECONNABORTED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(blob);
+}
+
+/** MiniMax cannot serve autofill/bidder — try the other MiniMax key, then Groq. */
+function isMinimaxUnavailableError(error) {
+    if (isMinimaxQuotaError(error)) return true;
+    if (isNetworkOrTimeoutError(error)) return true;
+    const status = Number(error?.response?.status || error?.upstreamStatus || 0);
+    if (status === 401 || status === 403 || status === 408 || status === 413) return true;
+    if (status >= 500 && status <= 599) return true;
+    const msg = String(
+        error?.upstreamMessage
+        || error?.response?.data?.base_resp?.status_msg
+        || error?.response?.data?.error?.message
+        || error?.message
+        || ''
+    );
+    return /akamai|access denied|invalid api key|unauthorized|request too large|not working/i.test(msg);
+}
+
 function isGroqQuotaError(error) {
     const status = error?.response?.status || error?.upstreamStatus;
     if (status === 429) return true;
@@ -733,7 +761,26 @@ function isGroqQuotaError(error) {
         || error?.message
         || ''
     );
-    return /rate limit|too many requests|quota|tokens per|requests per|RPD|TPM|RPM/i.test(msg);
+    return /rate limit|too many requests|quota|tokens per|requests per|RPD|TPM|RPM|request too large/i.test(msg);
+}
+
+function isGroqAuthError(error) {
+    const status = Number(error?.response?.status || error?.upstreamStatus || 0);
+    if (status === 401 || status === 403) return true;
+    const msg = String(
+        error?.upstreamMessage
+        || error?.response?.data?.error?.message
+        || error?.message
+        || ''
+    );
+    return /invalid api key|unauthorized|forbidden/i.test(msg);
+}
+
+/** Real Groq keys start with gsk_. Skip PowerShell leftovers / quoted junk. */
+function looksLikeGroqKey(key) {
+    const s = String(key || '').trim().replace(/^["']|["']$/g, '');
+    if (!s || isPlaceholderKey(s, 'groq')) return false;
+    return /^gsk_/i.test(s);
 }
 
 function normalizeChatCompletionsUrl(baseUrl) {
@@ -801,8 +848,7 @@ function getLocalLlmConfig() {
  * are NEVER answered by any LLM — they come from the saved profile only
  * (see applicationAnswersService fixedProfileKind).
  *
- * Default: MiniMax (same family as CV). Groq is rescue-only when MiniMax
- * rate-limits or leaves hard/new questions empty (see applicationAnswersService).
+ * Default: Groq for autofill / form answers (CV generation stays MiniMax).
  * Override: ANSWERS_PROVIDER=minimax|groq|deepseek
  * Local Ollama only via ANSWERS_USE_LOCAL=1.
  */
@@ -822,10 +868,17 @@ function getAnswersProviderConfig() {
     const forced = String(process.env.ANSWERS_PROVIDER || '').trim().toLowerCase();
     if (forced && PROVIDER_CONFIG[forced]) {
         if (forced === 'minimax') return getAnswersMinimaxConfig();
+        if (forced === 'groq') {
+            const groqForced = getAnswersGroqRescueConfig();
+            if (groqForced) return groqForced;
+            return getProviderConfig('groq');
+        }
         return getProviderConfig(forced);
     }
 
-    // Engine default: MiniMax for CV-aligned form answers.
+    // Engine default: Groq for autofill answers. MiniMax only if no Groq key.
+    const groq = getAnswersGroqRescueConfig();
+    if (groq) return groq;
     const mm = getAnswersMinimaxConfig();
     if (mm) return mm;
     return getProviderConfig();
@@ -849,14 +902,28 @@ function getAnswersMinimaxFallbackConfig() {
     return getAnswersMinimaxConfig();
 }
 
-/** Groq rescue when MiniMax cannot answer (quota or empty hard questions). */
+/**
+ * Groq rescue when MiniMax cannot answer (down, quota, bad key, empty hard questions).
+ * Skips junk values that are not real Groq keys (must start with gsk_).
+ */
 function getAnswersGroqRescueConfig() {
-    if (!listResolvedGroqKeys().length) return null;
-    try {
-        return getProviderConfig('groq');
-    } catch (_) {
-        return null;
+    const keys = listResolvedGroqKeys();
+    if (!keys.length) return null;
+    const active = getActiveGroqSlot();
+    const order = [];
+    if (keys[active - 1]) order.push(active);
+    for (let i = 1; i <= keys.length; i++) {
+        if (i !== active) order.push(i);
     }
+    for (const slot of order) {
+        const row = keys[slot - 1];
+        if (!looksLikeGroqKey(row?.apiKey)) continue;
+        try {
+            const cfg = getProviderConfig('groq', { groqKeySlot: slot });
+            if (cfg?.apiKey && looksLikeGroqKey(cfg.apiKey)) return cfg;
+        } catch (_) { /* try next slot */ }
+    }
+    return null;
 }
 
 function buildLocalLlmPublicStatus() {
@@ -975,7 +1042,10 @@ module.exports = {
     getAlternateMinimaxConfig,
     getAlternateGroqConfig,
     isMinimaxQuotaError,
+    isMinimaxUnavailableError,
     isGroqQuotaError,
+    isGroqAuthError,
+    looksLikeGroqKey,
     clearProviderCache,
     getMinimaxKeysStatus,
     getGroqKeysStatus,

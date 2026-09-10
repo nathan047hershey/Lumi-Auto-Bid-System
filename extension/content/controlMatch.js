@@ -117,6 +117,32 @@
             return -1;
         }
 
+        // Sponsorship / visa: want No must never score a Yes option.
+        if (/\b(sponsor|sponsorship|visa|h-?1b)\b/.test(w + t + ov)
+            && !(/\b(authorized|authorised|eligible)\b/.test(w) && /\bwithout\s+(?:visa\s+)?sponsorship\b/.test(w))) {
+            const wantNoSponsor = api.isNegative(w) || /^(no|n)\b/.test(w)
+                || (/\b(do not|don'?t|will not|won'?t|no(t)?)\b/.test(w) && /\b(sponsor|visa|need|require)\b/.test(w));
+            const wantYesSponsor = (api.isAffirmative(w) || /^(yes|y)\b/.test(w)) && !wantNoSponsor;
+            const optYes = /^(yes|y)\b/.test(t) || /^(yes|y)\b/.test(ov)
+                || (/\b(require|need)\b/.test(t + ov) && /\b(sponsor|visa)\b/.test(t + ov) && !api.hasNegation(t + ov));
+            const optNo = (/^(no|n)\b/.test(t) || /^(no|n)\b/.test(ov) || api.hasNegation(t + ov))
+                && !/^(yes|y)\b/.test(t);
+            if (wantNoSponsor && optYes && !optNo) return -1;
+            if (wantNoSponsor && optNo) return 99;
+            if (wantYesSponsor && optNo && !optYes) return -1;
+            if (wantYesSponsor && optYes) return 98;
+        }
+
+        // Former employee / prior employer at company: want No must never score Yes.
+        if (/\b(former|previously worked|have you (ever )?worked|employed by|contingent worker)\b/.test(w + t + ov)
+            || (/\bemployee\b/.test(w + t + ov) && /\b(former|ever|previously)\b/.test(w + t + ov))) {
+            const wantNoPrior = api.isNegative(w) || /^(no|n)\b/.test(w);
+            const optYes = /^(yes|y)\b/.test(t) || /^(yes|y)\b/.test(ov);
+            const optNo = (/^(no|n)\b/.test(t) || /^(no|n)\b/.test(ov)) && !/^(yes|y)\b/.test(t);
+            if (wantNoPrior && optYes && !optNo) return -1;
+            if (wantNoPrior && optNo) return 99;
+        }
+
         // Long wants that clearly mean Yes/No → score as Yes/No against short options.
         // Keep original text for EEO disability / veteran long-form matching below.
         const wantRawNorm = w;
@@ -167,6 +193,30 @@
 
         if (t === w || ov === w || t === wantRawNorm || ov === wantRawNorm) return 100;
 
+        // City / location typeahead BEFORE generic startsWith — otherwise
+        // "Palo Alto, CA" prefix-matches "Palo Alto, California…" at only 82
+        // and we keep typing instead of clicking the top hint.
+        {
+            const cityWant = w.split(',')[0].trim();
+            const cityOpt = t.split(',')[0].trim();
+            const looksLikeLocationOpt = /,\s*(united states|[a-z]{2}\b|[a-z ]+,)/.test(t)
+                || /\bunited states\b/.test(t);
+            const looksLikeLocationWant = /,\s*[a-z]{2}\b/.test(w) || /,\s*[a-z .'-]+$/.test(w);
+            if (looksLikeLocationWant || looksLikeLocationOpt) {
+                if (cityWant.length >= 3 && cityOpt.length >= 3) {
+                    if (cityWant === cityOpt) return 94;
+                    if (cityOpt.startsWith(cityWant) || cityWant.startsWith(cityOpt)) return 90;
+                    if (t.startsWith(cityWant) || t.includes(`${cityWant},`)) return 88;
+                }
+                if (cityWant.length >= 3 && t.includes(cityWant)) {
+                    if (/\bca\b/.test(w) && /\bcalifornia\b/.test(t)) return 86;
+                    if (/\bny\b/.test(w) && /\bnew york\b/.test(t)) return 86;
+                    if (/\btx\b/.test(w) && /\btexas\b/.test(t)) return 86;
+                    if (/\bwa\b/.test(w) && /\bwashington\b/.test(t)) return 86;
+                }
+            }
+        }
+
         // Gender synonyms (before short-token gate — "man"/"male" are ≤3 chars).
         const gender = {
             man: ['male', 'man', 'm'],
@@ -185,17 +235,43 @@
             }
         }
 
-        // Years of experience: "18" / "10+" / "10+ years" / "10 or more"
+        // Years of experience: map profile years onto option bands (never pick 0-2 for 15+).
         if (/\d/.test(w) && (/\d/.test(t) || /\d/.test(ov))) {
+            const parseWant = (s) => {
+                const x = String(s || '').toLowerCase();
+                let m = x.match(/(\d+)\s*\+/) || x.match(/(\d+)\s*or more/) || x.match(/more than\s*(\d+)/);
+                if (m) return parseInt(m[1], 10);
+                m = x.match(/(\d+)\s*[-–]\s*(\d+)/);
+                if (m) return parseInt(m[2], 10);
+                m = x.match(/(\d+)/);
+                return m ? parseInt(m[1], 10) : NaN;
+            };
+            const parseRange = (s) => {
+                const x = String(s || '').toLowerCase();
+                let m = x.match(/(\d+)\s*\+/) || x.match(/(\d+)\s*or more/) || x.match(/more than\s*(\d+)/);
+                if (m) return { min: parseInt(m[1], 10), max: Infinity };
+                m = x.match(/(\d+)\s*[-–]\s*(\d+)/);
+                if (m) return { min: parseInt(m[1], 10), max: parseInt(m[2], 10) };
+                m = x.match(/less than\s*(\d+)/);
+                if (m) return { min: 0, max: Math.max(0, parseInt(m[1], 10) - 1) };
+                return null;
+            };
+            const wv = parseWant(w);
+            const range = parseRange(t) || parseRange(ov);
+            if (Number.isFinite(wv) && range) {
+                if (Number.isFinite(range.max) && wv > range.max) return -1;
+                if (wv >= range.min && wv <= range.max) {
+                    return range.max === Infinity ? 98 : 94;
+                }
+                if (wv >= 10 && range.max === Infinity) return 96;
+            }
             const wn = w.match(/(\d+)\s*\+?/);
             const tn = (t + ' ' + ov).match(/(\d+)\s*\+?/);
             if (wn && tn) {
-                const wv = parseInt(wn[1], 10);
-                const tv = parseInt(tn[1], 10);
-                if (wv === tv) return 92;
-                // Profile 18 years → pick "10+" / "10 or more" band
-                if (wv >= 10 && tv >= 10 && /\+|or more|more than|at least/.test(t + ov + w)) return 88;
-                if (wv >= 10 && tv === 10 && /\+/.test(t + ov)) return 90;
+                const a = parseInt(wn[1], 10);
+                const b = parseInt(tn[1], 10);
+                if (a === b && /\+/.test(t + ov + w)) return 92;
+                if (a >= 10 && b >= 10 && /\+|or more|more than|at least/.test(t + ov + w)) return 88;
             }
         }
 
@@ -315,8 +391,12 @@
             return !raw || !api.isNegative(raw);
         }
         // Previous employer / "have you ever" — usually want OFF (No).
-        if (/\b(previously worked|have you ever|former employee|working for|contractor|contingent worker)\b/.test(lab)) {
+        if (/\b(previously worked|have you ever|former employee|employed by|working for|contractor|contingent worker)\b/.test(lab)) {
             return api.isAffirmative(raw);
+        }
+        // Retain-data / talent-pool checkboxes — always ON.
+        if (/\b(retain|future opportunit|talent pool|keep my (data|application)|consider me for)\b/.test(lab)) {
+            return !api.isNegative(raw);
         }
         return false;
     };

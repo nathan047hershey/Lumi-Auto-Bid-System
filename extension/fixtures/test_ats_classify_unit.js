@@ -18,6 +18,7 @@ function detectAts({ host = '', href = '', has = () => false } = {}) {
     if (host.includes('smartrecruiters.com')) return 'smartrecruiters';
     if (host.includes('icims.com')) return 'icims';
     if (host.includes('bamboohr.com')) return 'bamboohr';
+    if (host.includes('rippling.com') || host.includes('ats.rippling')) return 'rippling';
     if (has('#application_form')) return 'greenhouse';
     if (has('form.application-form')) return 'lever';
     if (has('[class*="ashby"]')) return 'ashby';
@@ -81,6 +82,7 @@ function classifyPersonal(label, name = '', autoId = '') {
 
 const checks = [
     ['gh host', detectAts({ host: 'boards.greenhouse.io' }) === 'greenhouse'],
+    ['rippling host', detectAts({ host: 'ats.rippling.com' }) === 'rippling'],
     ['lever host', detectAts({ host: 'jobs.lever.co' }) === 'lever'],
     ['ashby host', detectAts({ host: 'jobs.ashbyhq.com' }) === 'ashby'],
     ['workday host', detectAts({ host: 'company.wd1.myworkdayjobs.com' }) === 'workday'],

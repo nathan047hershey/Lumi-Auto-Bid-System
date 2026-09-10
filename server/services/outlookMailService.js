@@ -1,8 +1,70 @@
+/**
+ * TOKEN ENCRYPTION: access_token and refresh_token are encrypted with AES-256-GCM
+ * before storage. Key derived from OUTLOOK_TOKEN_KEY (or JWT_SECRET as fallback).
+ */
+
+/**
+ * Token encryption using AES-256-GCM.
+ * Key derived from OUTLOOK_TOKEN_KEY or falls back to JWT_SECRET.
+ * Tokens stored in DB are encrypted; decrypted only in memory during use.
+ */
+function getTokenKey() {
+    const key = process.env.OUTLOOK_TOKEN_KEY || process.env.JWT_SECRET;
+    if (!key) {
+        throw new Error('Set OUTLOOK_TOKEN_KEY or JWT_SECRET in server/.env to encrypt Outlook tokens');
+    }
+    // Ensure 32 bytes for AES-256
+    return crypto.createHash('sha256').update(key).digest();
+}
+
+function encryptToken(plain) {
+    if (!plain) return null;
+    const key = getTokenKey();
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    // Format: iv:authTag:encrypted (all base64)
+    return [
+        iv.toString('base64'),
+        authTag.toString('base64'),
+        encrypted.toString('base64')
+    ].join(':');
+}
+
+function decryptToken(encrypted) {
+    if (!encrypted) return null;
+    // Detect legacy unencrypted tokens (no colons, looks like JWT or plain string)
+    if (!/^[A-Za-z0-9+/=]+:([A-Za-z0-9+/=]+:)?[A-Za-z0-9+/=]+$/.test(encrypted)) {
+        return encrypted; // Already plain text (legacy)
+    }
+    try {
+        const [ivB64, authTagB64, dataB64] = encrypted.split(':');
+        if (!ivB64 || !authTagB64 || !dataB64) return encrypted;
+        const key = getTokenKey();
+        const iv = Buffer.from(ivB64, 'base64');
+        const authTag = Buffer.from(authTagB64, 'base64');
+        const encryptedData = Buffer.from(dataB64, 'base64');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(authTag);
+        return decipher.update(encryptedData) + decipher.final('utf8');
+    } catch (err) {
+        console.warn('[outlook] token decrypt failed, returning as-is:', err?.message);
+        return encrypted; // Fallback: return as-is
+    }
+}
+
+
 'use strict';
 /**
- * Microsoft Graph mail — multi-mailbox push (free change notifications).
- * One Lumi user can connect many Hotmail/Outlook.com inboxes.
- * No 60s polling unless OUTLOOK_POLL_ENABLED=1.
+ * Microsoft Graph mail — multi-mailbox (free Graph API for personal Outlook/Hotmail).
+ *
+ * Preferred receive modes (all use Graph — not IMAP):
+ *   1. Push change notifications when MAIL_WEBHOOK_PUBLIC_BASE is public HTTPS
+ *   2. Otherwise auto Graph poll + on-demand sync during OTP wait
+ *
+ * Set OUTLOOK_CLIENT_ID (Azure app, personal accounts, public client).
+ * No 60s poll unless OUTLOOK_POLL_ENABLED=1 or auto-poll fallback applies.
  */
 
 const crypto = require('crypto');
@@ -10,11 +72,39 @@ const axios = require('axios');
 const { getDb, getOne, getAll, runQuery, saveDatabase } = require('../config/database');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
-const AUTH_HOST = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
+
+/**
+ * OAuth2 Authority host for Microsoft identity platform.
+ *
+ * Options:
+ *   - "consumers"  : Personal Microsoft accounts (outlook.com, hotmail.com, live.com)
+ *   - "common"     : Multi-tenant (any organization's accounts)
+ *   - "{tenant-id}": Specific organization (e.g., "myorganization.onmicrosoft.com")
+ *
+ * Set via OUTLOOK_AUTH_TENANT in server/.env
+ */
+function getAuthTenant() {
+    return String(process.env.OUTLOOK_AUTH_TENANT || 'consumers').trim().toLowerCase();
+}
+
+function getAuthHost() {
+    const tenant = getAuthTenant();
+    // Validate tenant is safe (alphanumeric, hyphens, underscores)
+    if (!/^[a-z0-9\-_]+$/i.test(tenant)) {
+        throw new Error(`Invalid OUTLOOK_AUTH_TENANT value: "${tenant}"`);
+    }
+    return `https://login.microsoftonline.com/${tenant}/oauth2/v2.0`;
+}
+
+const AUTH_HOST = getAuthHost();
 const SCOPES = 'offline_access User.Read Mail.Read';
 const POLL_ENABLED = /^(1|true|yes)$/i.test(String(process.env.OUTLOOK_POLL_ENABLED || '').trim());
 const SYNC_MS = Math.max(60_000, Number(process.env.OUTLOOK_SYNC_MS) || 300_000);
 const MAX_SYNC = 25;
+/** Sync Graph inbox while waiting for OTP (default ON). Set OUTLOOK_ON_DEMAND_GRAPH=0 to disable. */
+const ON_DEMAND_GRAPH = !/^(0|false|off|no)$/i.test(String(process.env.OUTLOOK_ON_DEMAND_GRAPH ?? '1').trim());
+/** When push URL is localhost, auto-enable Graph poll so OTP still works. */
+const AUTO_POLL_WHEN_NO_TUNNEL = !/^(0|false|off|no)$/i.test(String(process.env.OUTLOOK_GRAPH_AUTO_POLL ?? '1').trim());
 
 let syncTimer = null;
 let syncInFlight = false;
@@ -42,6 +132,19 @@ function publicBase() {
 
 function graphNotifyUrl() {
     return `${publicBase()}/api/hooks/graph-mail`;
+}
+
+function hasPublicNotifyUrl() {
+    const url = graphNotifyUrl();
+    return !!url && !/^http:\/\/(127\.0\.0\.1|localhost)/i.test(url);
+}
+
+/** Graph inbox sync on a timer (explicit poll or auto when tunnel missing). */
+function graphPollActive() {
+    if (!clientId()) return false;
+    if (POLL_ENABLED) return true;
+    if (AUTO_POLL_WHEN_NO_TUNNEL && !hasPublicNotifyUrl()) return true;
+    return false;
 }
 
 function ensureTables() {
@@ -73,7 +176,7 @@ function ensureTables() {
     try {
         const legacy = getAll(`SELECT * FROM outlook_accounts`);
         for (const row of legacy) {
-            if (!row.refresh_token && !row.access_token) continue;
+            if (!decryptedRefresh && !row.access_token) continue;
             const email = row.email || `legacy-user-${row.user_id}@local`;
             const exists = getOne(
                 `SELECT id FROM outlook_mailboxes WHERE user_id = ? AND lower(email) = lower(?)`,
@@ -87,7 +190,7 @@ function ensureTables() {
                     subscription_id, subscription_expires_at, client_state
                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    row.user_id, email, row.display_name, row.access_token, row.refresh_token,
+                    row.user_id, email, row.display_name, row.access_token, decryptedRefresh,
                     row.expires_at, row.scope, row.connected_at, row.updated_at, row.last_sync_at,
                     row.last_error, row.subscription_id, row.subscription_expires_at, row.client_state
                 ]
@@ -121,19 +224,31 @@ function ensureTables() {
 
 function configStatus() {
     const id = clientId();
+    const pushReady = hasPublicNotifyUrl();
+    const pollActive = graphPollActive();
+    const tenant = getAuthTenant();
     return {
-        mode: 'graph_push_multi',
+        mode: pushReady ? 'graph_push_multi' : (pollActive ? 'graph_poll_multi' : 'graph_connect_only'),
+        provider: 'microsoft_graph',
         configured: !!id,
         clientIdSet: !!id,
         hasSecret: !!clientSecret(),
         redirectUri: redirectUri(),
         scopes: SCOPES,
         pollEnabled: POLL_ENABLED,
+        pollActive,
+        onDemandGraph: ON_DEMAND_GRAPH,
         syncMs: SYNC_MS,
         notifyUrl: graphNotifyUrl(),
         publicBase: publicBase(),
-        needsTunnel: !String(process.env.MAIL_WEBHOOK_PUBLIC_BASE || '').trim(),
-        multiMailbox: true
+        needsTunnel: !pushReady,
+        pushReady,
+        multiMailbox: true,
+        authTenant: tenant,
+        authTenantDescription: tenant === 'consumers' ? 'Personal Microsoft accounts' :
+            tenant === 'common' ? 'Multi-tenant (any organization)' :
+            'Organization-specific tenant',
+        azureSetupUrl: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade'
     };
 }
 
@@ -169,7 +284,7 @@ function accountPublic(row) {
     return {
         id: row.id,
         mailbox_id: row.id,
-        connected: !!(row.refresh_token || row.access_token),
+        connected: !!(decryptedRefresh || row.access_token),
         email: row.email || null,
         display_name: row.display_name || null,
         connected_at: row.connected_at || null,
@@ -317,7 +432,7 @@ async function pollDeviceCode(userId, deviceCode, { maxWaitMs = 15 * 60 * 1000 }
             } catch (err) {
                 console.warn('[outlook] subscription after connect:', err?.message || err);
             }
-            if (POLL_ENABLED) ensureSyncLoop();
+            if (POLL_ENABLED || graphPollActive()) ensureSyncLoop();
             return accountPublic(getMailbox(mailbox.id) || updated);
         }
         if (data?.error === 'authorization_pending') continue;
@@ -358,8 +473,8 @@ async function saveTokensForNewOrExisting(userId, tokenData) {
                 updated_at = ?, last_error = NULL
              WHERE id = ?`,
             [
-                tokenData.access_token,
-                tokenData.refresh_token || null,
+                encryptToken(tokenData.access_token),
+                tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
                 expiresAt,
                 tokenData.scope || SCOPES,
                 displayName,
@@ -379,8 +494,8 @@ async function saveTokensForNewOrExisting(userId, tokenData) {
             userId,
             email,
             displayName,
-            tokenData.access_token,
-            tokenData.refresh_token || null,
+            encryptToken(tokenData.access_token),
+            tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
             expiresAt,
             tokenData.scope || SCOPES,
             now,
@@ -408,8 +523,8 @@ async function saveTokens(mailboxId, tokenData) {
             last_error = NULL
          WHERE id = ?`,
         [
-            tokenData.access_token,
-            tokenData.refresh_token || null,
+            encryptToken(tokenData.access_token),
+            tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
             expiresAt,
             tokenData.scope || SCOPES,
             new Date().toISOString(),
@@ -423,14 +538,17 @@ async function getAccessToken(mailboxId) {
     if (!row?.access_token && !row?.refresh_token) {
         throw new Error('Outlook Graph mailbox not connected');
     }
-    if (row.access_token && row.expires_at && Date.now() < Number(row.expires_at) - 15_000) {
-        return row.access_token;
+    // Decrypt tokens from DB (they are encrypted at rest)
+    const decryptedAccess = decryptToken(row.access_token);
+    const decryptedRefresh = decryptToken(row.refresh_token);
+    if (decryptedAccess && row.expires_at && Date.now() < Number(row.expires_at) - 15_000) {
+        return decryptedAccess;
     }
-    if (!row.refresh_token) throw new Error('Outlook session expired — reconnect this mailbox');
+    if (!decryptedRefresh) throw new Error('Outlook session expired — reconnect this mailbox');
     const data = await tokenRequest({
         client_id: clientId(),
         grant_type: 'refresh_token',
-        refresh_token: row.refresh_token,
+        refresh_token: decryptToken(row.refresh_token),
         scope: SCOPES
     });
     await saveTokens(mailboxId, data);
@@ -451,7 +569,7 @@ async function graphGet(mailboxId, path, params = {}) {
             const tok = await tokenRequest({
                 client_id: clientId(),
                 grant_type: 'refresh_token',
-                refresh_token: row.refresh_token,
+                refresh_token: decryptToken(row.refresh_token),
                 scope: SCOPES
             });
             await saveTokens(mailboxId, tok);
@@ -623,12 +741,23 @@ async function waitForOtp(userId, {
 } = {}) {
     const started = Date.now();
     const after = afterIso || new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const onDemandGraph = /^(1|true|yes)$/i.test(String(process.env.OUTLOOK_ON_DEMAND_GRAPH || '').trim());
     const interval = Math.max(1000, Number(pollMs) || 2000);
+    let lastGmailSync = 0;
+    let lastGraphSync = 0;
 
     while (Date.now() - started < timeoutMs) {
-        if (onDemandGraph) {
+        // Microsoft Graph — preferred for Outlook/Hotmail OTPs
+        if (ON_DEMAND_GRAPH && clientId() && Date.now() - lastGraphSync >= 5000) {
+            lastGraphSync = Date.now();
             await syncAllMailboxesForUser(userId).catch(() => {});
+        }
+        // Free Gmail IMAP — pull periodically while waiting for OTP (not every tick)
+        if (Date.now() - lastGmailSync >= 8000) {
+            lastGmailSync = Date.now();
+            try {
+                const gmailImap = require('./gmailImapService');
+                await gmailImap.syncAllForUser(userId);
+            } catch (_) { /* optional */ }
         }
         const hit = findLatestOtp(userId, { afterIso: after, fromHint });
         if (hit?.otp_code) {
@@ -691,8 +820,8 @@ async function ensureMailSubscription(mailboxId) {
     if (!existing) throw new Error('mailbox not found');
     if (!clientId()) throw new Error('OUTLOOK_CLIENT_ID not set');
     const notifyUrl = graphNotifyUrl();
-    if (/^http:\/\/(127\.0\.0\.1|localhost)/i.test(notifyUrl)) {
-        throw new Error('Graph push needs a public HTTPS URL — start cloudflared and set MAIL_WEBHOOK_PUBLIC_BASE');
+    if (!hasPublicNotifyUrl()) {
+        throw new Error('Graph push needs a public HTTPS URL — start cloudflared and set MAIL_WEBHOOK_PUBLIC_BASE (OTP still works via Graph sync without push)');
     }
 
     if (existing.subscription_id && existing.subscription_expires_at) {
@@ -864,7 +993,7 @@ async function syncAllConnected() {
 }
 
 function ensureSyncLoop() {
-    if (!POLL_ENABLED) return;
+    if (!graphPollActive()) return;
     if (syncTimer) return;
     if (!clientId()) return;
     syncTimer = setInterval(() => {
@@ -879,12 +1008,18 @@ function startOutlookMailService() {
         require('./mailForwardService').ensureTables();
     } catch (_) { /* ignore */ }
     ensureSubscriptionRenewLoop();
-    if (POLL_ENABLED) {
+    if (graphPollActive()) {
         ensureSyncLoop();
         setTimeout(() => { syncAllConnected().catch(() => {}); }, 5000);
-        console.log('[outlook] Graph poll enabled (OUTLOOK_POLL_ENABLED)');
+        console.log(
+            POLL_ENABLED
+                ? '[outlook] Graph poll enabled (OUTLOOK_POLL_ENABLED)'
+                : '[outlook] Graph auto-poll (no public MAIL_WEBHOOK_PUBLIC_BASE — OTP via Graph sync)'
+        );
+    } else if (clientId()) {
+        console.log('[outlook] receive mode = Graph push multi-mailbox');
     } else {
-        console.log('[outlook] receive mode = Graph push multi-mailbox (no inbox poll)');
+        console.log('[outlook] Graph idle — set OUTLOOK_CLIENT_ID to enable Outlook OTP');
     }
     setTimeout(() => { renewExpiringSubscriptions().catch(() => {}); }, 8000);
 }
@@ -934,3 +1069,9 @@ module.exports = {
     ensureSyncLoop,
     clientId
 };
+
+
+
+
+
+

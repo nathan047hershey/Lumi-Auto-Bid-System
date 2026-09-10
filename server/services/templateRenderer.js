@@ -30,6 +30,7 @@ const {
 } = require('docx');
 
 const { collectContactSegments } = require('./resumeContactHeader');
+const { asNodeBuffer } = require('../utils/asNodeBuffer');
 
 // --- helpers ---------------------------------------------------------------
 
@@ -1565,7 +1566,7 @@ async function buildDocx({ resumeHtml, profile, styleSpec, font }) {
             children: [...headerChildren, ...bodyChildren]
         }]
     });
-    return Packer.toBuffer(doc);
+    return asNodeBuffer(await Packer.toBuffer(doc));
 }
 
 // Public: like `buildDocx` but for the admin template preview. It uses

@@ -1,0 +1,142 @@
+[
+  {
+    "id": "question_9038785005",
+    "label": "Are you 18 years or older?*",
+    "answer": "Yes",
+    "source": "question_memory",
+    "match_source": "question_memory",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "over_18",
+    "knockout": false,
+    "memory_score": 0.75,
+    "memory_gap": 0.4166666666666667,
+    "failure_code": null
+  },
+  {
+    "id": "question_9038786005",
+    "label": "Are you legally authorized to work in the country in which you're applying for?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_9038787005",
+    "label": "(REQUIRED for Canadian or Mexican Citizens Only) Are you currently on a TN Visa? Any candidate who holds a TN, steps will need to be taken at the offer stage to have the TN transferred to Precisely, a",
+    "answer": "No",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "requires_sponsorship",
+    "knockout": true
+  },
+  {
+    "id": "question_9038788005",
+    "label": "Do you now, or will you in the future, require employer sponsorship or other immigration-related support to obtain, maintain, or extend your legal right to work in the country where this position is l",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_9038789005",
+    "label": "If you answered yes to the above, please provide details and state your current status, future sponsorship needs and expirations if applies.",
+    "answer": "No",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "requires_sponsorship",
+    "knockout": true
+  },
+  {
+    "id": "question_9038790005",
+    "label": "Preferred name",
+    "answer": "Nathan",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "preferred_name",
+    "knockout": false
+  },
+  {
+    "id": "question_9038791005",
+    "label": "Do you have any relatives employed by this organization?*",
+    "answer": "No",
+    "source": "fixed",
+    "match_source": "regex",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "previous_employer_no",
+    "knockout": true
+  },
+  {
+    "id": "question_9038793005",
+    "label": "How did you hear about us?*",
+    "answer": "a prior company",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "how_heard",
+    "knockout": false
+  },
+  {
+    "id": "question_9038794005",
+    "label": "Have you ever been employed at Precisely?*",
+    "answer": "No",
+    "source": "fixed",
+    "match_source": "regex",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "previous_employer_no",
+    "knockout": true
+  },
+  {
+    "id": "question_9038799005",
+    "label": "Based on your experience and the responsibilities of this role, what base salary range in local currency are you looking for? (please do not enter zero)*",
+    "answer": "$120,000",
+    "lane": "salary",
+    "match_source": "salary",
+    "salary_meta": {
+      "source": "profile_only",
+      "value": 120000,
+      "jdRange": null,
+      "profileRange": {
+        "min": 120000,
+        "max": 120000
+      }
+    }
+  },
+  {
+    "id": "question_9038800005",
+    "label": "Which of the following best describes your experience with REST APIs?*",
+    "answer": "I have built production APIs with REST and GraphQL, using JWT and OAuth2 for auth, with role checks on protected routes and services.",
+    "answer_type": "written",
+    "source": "api",
+    "match_source": "llm",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "disability_status",
+    "label": "Disability Status",
+    "answer": "No, I do not have a disability",
+    "source": "hard_lock",
+    "match_source": "hard_lock",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "disability_status",
+    "knockout": true,
+    "failure_code": "knockout_lock"
+  }
+]

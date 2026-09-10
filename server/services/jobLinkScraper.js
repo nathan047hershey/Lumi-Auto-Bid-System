@@ -267,10 +267,17 @@ function canonicalLinkedInUrl(url) {
  */
 function rowSourceUrl(row) {
     if (!row) return null;
+    const { leverScrapeUrl, isLeverUrl } = require('./scraper/leverUrl');
     const src = row.source_url ?? row.linkedin_url ?? null;
-    if (src && String(src).trim()) return String(src).trim();
+    if (src && String(src).trim()) {
+        const raw = String(src).trim();
+        return isLeverUrl(raw) ? (leverScrapeUrl(raw) || raw) : raw;
+    }
     const apply = row.job_apply_url;
-    if (apply && String(apply).trim()) return String(apply).trim();
+    if (apply && String(apply).trim()) {
+        const raw = String(apply).trim();
+        return isLeverUrl(raw) ? (leverScrapeUrl(raw) || raw) : raw;
+    }
     return null;
 }
 
@@ -299,7 +306,9 @@ function scrapeUrlCandidates(row) {
     // Prefer ATS JD/posting shapes ahead of apply/form URLs.
     const preferred = [];
     for (const u of out) {
-        if (isGreenhouseUrl(u)) preferred.push(greenhouseScrapeUrl(u));
+        if (isGreenhouseUrl(u) || greenhouseScrapeUrl(u) !== u) {
+            preferred.push(greenhouseScrapeUrl(u));
+        }
         if (isLeverUrl(u)) preferred.push(leverScrapeUrl(u));
     }
     for (const u of preferred) push(u);
@@ -626,6 +635,7 @@ async function scrapeRow(row) {
         'careers.nlsnow.com',                // NLSNOW — WordPress careers
         'careers.workopolis.com',
         'jobs.lever.co',
+        'jobs.eu.lever.co',
         'jobs.bloomberg.com',
         'jobs.smartrecruiters.com',
         'apply.workable.com',
@@ -761,8 +771,13 @@ async function scrapeRow(row) {
         if (parsed && parsed.error) {
             lastFetchError = parsed.error;
             // Hard ATS miss — no point trying other Greenhouse variants of same board/id
-            if (/greenhouse-job-not-found|lever-posting-not-found|ashby-posting-not-found/i.test(parsed.error)) {
-                break;
+            if (/greenhouse-job-not-found|ashby-posting-not-found/i.test(parsed.error)) {
+                // Inferred company-page boards (ZoomInfo + gh_jid) may
+                // 404 on the guessed token — keep trying the original URL.
+                const inferredCompanyGh =
+                    /greenhouse-job-not-found/i.test(parsed.error)
+                    && !/greenhouse\.io/i.test(sourceUrl || '');
+                if (!inferredCompanyGh) break;
             }
             parsed = { error: parsed.error };
             continue;
@@ -876,9 +891,14 @@ async function scrapeRow(row) {
     // Also strip JobRight tracking and drop a redundant source_url when it is
     // the same posting as apply (Lever …/uuid vs …/uuid/apply?utm=…).
     let applyUrlPatch = null;
+    let sourceUrlPatch = null;
     let clearRedundantSource = false;
     try {
-        const { canonicalizeGreenhouseApplyUrl, isGreenhouseUrl } = require('./scraper/greenhouseUrl');
+        const {
+            canonicalizeGreenhouseApplyUrl,
+            isGreenhouseUrl,
+            parseGreenhouseBoardAndJob
+        } = require('./scraper/greenhouseUrl');
         const {
             resolveStoredJobUrls,
             urlsReferToSameJob
@@ -893,22 +913,31 @@ async function scrapeRow(row) {
                 applyUrlPatch = canon;
             }
         }
+        if (resolved.source && resolved.source !== row.source_url) {
+            sourceUrlPatch = resolved.source;
+        }
         const nextApply = applyUrlPatch || row.job_apply_url;
+        const { isLeverUrl } = require('./scraper/leverUrl');
+        // Never drop Lever source — that posting URL (no /apply) is
+        // what scrape needs. Apply stays on …/uuid/apply for the bidder.
+        const companyGh = parseGreenhouseBoardAndJob(row.source_url);
         if (
-            row.source_url
+            !isLeverUrl(nextApply || row.source_url)
+            && row.source_url
             && nextApply
             && urlsReferToSameJob(row.source_url, nextApply)
+            && !(companyGh && companyGh.shape === 'company_gh_jid')
         ) {
             clearRedundantSource = true;
         }
-        if (resolved.source === null && row.source_url) {
+        if (!isLeverUrl(nextApply || row.source_url) && resolved.source === null && row.source_url) {
             clearRedundantSource = true;
         }
     } catch (_) { /* ignore */ }
 
     try {
         withTransaction(() => {
-            if (applyUrlPatch || clearRedundantSource) {
+            if (applyUrlPatch || sourceUrlPatch || clearRedundantSource) {
                 txRunQuery(
                     `UPDATE job_links
                      SET job_description = ?,
@@ -916,7 +945,7 @@ async function scrapeRow(row) {
                          position_title = COALESCE(?, position_title),
                          location = COALESCE(?, location),
                          job_apply_url = COALESCE(?, job_apply_url),
-                         source_url = CASE WHEN ? THEN NULL ELSE source_url END,
+                         source_url = CASE WHEN ? THEN NULL ELSE COALESCE(?, source_url) END,
                          is_available = COALESCE(?, is_available),
                          clearance_required = COALESCE(?, clearance_required),
                          fetch_status = 'success',
@@ -933,6 +962,7 @@ async function scrapeRow(row) {
                         parsed.location || null,
                         applyUrlPatch,
                         clearRedundantSource ? 1 : 0,
+                        sourceUrlPatch,
                         availableAfterScrape,
                         clearance || null,
                         row.id

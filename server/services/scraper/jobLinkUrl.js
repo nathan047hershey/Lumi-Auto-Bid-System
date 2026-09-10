@@ -10,7 +10,8 @@
 const {
     parseGreenhouseBoardAndJob,
     canonicalizeGreenhouseApplyUrl,
-    isGreenhouseUrl
+    isGreenhouseUrl,
+    isGreenhouseIoHost
 } = require('./greenhouseUrl');
 const {
     leverPostingUrl,
@@ -91,11 +92,9 @@ function canonicalJobLinkUrl(url) {
         return `https://www.linkedin.com/jobs/view/${linkedInId}`;
     }
     try {
-        if (isGreenhouseUrl(url)) {
-            const gh = parseGreenhouseBoardAndJob(url);
-            if (gh) {
-                return `greenhouse://${gh.board.toLowerCase()}/jobs/${gh.jobId}`;
-            }
+        const gh = parseGreenhouseBoardAndJob(url);
+        if (gh) {
+            return `greenhouse://${gh.board.toLowerCase()}/jobs/${gh.jobId}`;
         }
     } catch (_) { /* ignore */ }
     try {
@@ -157,13 +156,40 @@ function canonicalizeStoredApplyUrl(url) {
  * (e.g. Lever posting + Lever apply?utm_source=jobright).
  */
 function resolveStoredJobUrls(sourceRaw, applyRaw) {
-    const apply = canonicalizeStoredApplyUrl(applyRaw);
+    const rawGh = parseGreenhouseBoardAndJob(sourceRaw)
+        || parseGreenhouseBoardAndJob(applyRaw);
+    const apply = canonicalizeStoredApplyUrl(applyRaw || sourceRaw);
     let source = normalizeUrl(sourceRaw);
-    if (!apply) {
+    if (!apply && !source) {
         return { source: null, apply: null };
     }
+    // Lever /apply is the form only. Keep source as the posting page
+    // (no /apply) so scrape hits jobs.eu.lever.co/…/uuid, not the form.
+    const leverHint = apply || source;
+    if (isLeverUrl(leverHint)) {
+        const posting = leverPostingUrl(leverHint);
+        return {
+            source: posting || source || null,
+            apply: apply || (posting ? `${posting}/apply` : null)
+        };
+    }
+    if (rawGh && rawGh.shape === 'company_gh_jid') {
+        // Keep the company career page as source (what the user pasted)
+        // and store the Greenhouse embed as the apply/form URL.
+        return {
+            source: source || normalizeUrl(applyRaw) || null,
+            apply: canonicalizeGreenhouseApplyUrl(sourceRaw || applyRaw) || apply
+        };
+    }
+    if (!apply) {
+        return { source: source || null, apply: null };
+    }
     if (source && urlsReferToSameJob(source, apply)) {
-        source = null;
+        // Drop redundant greenhouse.io variants (classic vs embed).
+        // Do not drop a company career page that only shares a gh_jid.
+        if (isGreenhouseIoHost(source) || !rawGh) {
+            source = null;
+        }
     }
     return { source, apply };
 }

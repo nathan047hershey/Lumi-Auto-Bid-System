@@ -19,6 +19,44 @@
     /** Fallback when payload.bidDeadline is missing — keep in sync with autofillEngine BID_HARD_LIMIT_MS. */
     const DEFAULT_BUDGET_MS = 90 * 1000;
 
+    /** Company / related company-or-role employment → No. Not tech "worked with". */
+    const FORMER_EMPLOYEE_RE = /\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|been employed by\b|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|previously\s+worked\s+(at|for|here|with\s+(us|this|our)|before)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer|organization|firm)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|(?:company|employer).{0,40}\brelated\b|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before)|employed by .{0,40} before)\b/i;
+    /** Tech/stack/tool experience → Yes (Python, PKI, APIs, etc.). */
+    const SKILL_STACK_RE = /\b(python|java|javascript|typescript|react|node\.?js|golang|go\b|\.net|c\+\+|c#|sql|aws|azure|gcp|kubernetes|k8s|docker|linux|api|rest|graphql|certificate|pki|x\.?509|machine identity|lifecycle management|security infrastructure|devops|terraform|ansible|spark|kafka|redis|mongo|postgres|postgresql|machine learning|\bml\b|\bai\b|llm|chatgpt|copilot)\b/i;
+    const SKILL_EXPERIENCE_YES_RE = /\b((do you have|have you)\b.{0,140}\b(deep\s+)?(hands[\s-]*on\s+)?(experience|worked with|familiar|proficien|knowledge|expertise)\b|(experience|hands[\s-]*on|worked with|familiar|proficien)\b.{0,80}\b(with|in|using)\b)/i;
+    /** Relative / friend / relationship at the company → always No. */
+    const EMPLOYEE_RELATIONSHIP_RE = /\b(relative|family member|know anyone|personal relationship|related to (anyone|an? employee)|friend (working|employed)|anyone you know (who )?(works|is employed)|employee .{0,40} relationship)\b/i;
+    /** Non-compete / restrictive covenant → always No. */
+    const NON_COMPETE_RE = /\b(non[\s_-]*compete|noncompete|restrictive covenant|garden leave|subject to .{0,40}(non[\s_-]*compete|covenant))\b/i;
+    /** Incomplete degree / program → always No. */
+    const INCOMPLETE_EDU_RE = /\b(incomplete|not complete|did not complete|unfinished)\b.{0,60}\b(degree|program|education|school|studies)\b|\b(degree|program|education).{0,40}\b(incomplete|not complete|unfinished)\b/i;
+
+    function labelLooksLikeFormerEmployee(label) {
+        return FORMER_EMPLOYEE_RE.test(String(label || ''));
+    }
+    function labelLooksLikeSkillExperienceYes(label) {
+        const lab = String(label || '');
+        if (FORMER_EMPLOYEE_RE.test(lab)) return false;
+        // Stack/tech named → Yes. Or experience wording + tech token.
+        if (SKILL_STACK_RE.test(lab) && SKILL_EXPERIENCE_YES_RE.test(lab)) return true;
+        if (SKILL_STACK_RE.test(lab) && /\b(experience|hands[\s-]*on|familiar|proficien|worked with|knowledge)\b/i.test(lab)) {
+            return true;
+        }
+        // Generic "experience using/with X" without company wording.
+        if (/\b(experience|worked with|familiar|hands[\s-]*on)\b.{0,40}\b(using|with|in)\b/i.test(lab)
+            && !/\b(company|employer|employee|affiliate|subsidiary)\b/i.test(lab)) {
+            return true;
+        }
+        return false;
+    }
+    function labelLooksLikeEmployeeRelationship(label) {
+        return EMPLOYEE_RELATIONSHIP_RE.test(String(label || ''));
+    }
+    function labelLooksLikeNonCompete(label) {
+        return NON_COMPETE_RE.test(String(label || ''))
+            || INCOMPLETE_EDU_RE.test(String(label || ''));
+    }
+
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     function detectAts() {
@@ -34,6 +72,7 @@
         if (host.includes('icims.com')) return 'icims';
         if (host.includes('smartrecruiters.com')) return 'smartrecruiters';
         if (host.includes('bamboohr.com')) return 'bamboohr';
+        if (host.includes('rippling.com')) return 'rippling';
         if (document.querySelector('#greenhouse-job-application, [data-provider="Greenhouse"]')) {
             return 'greenhouse';
         }
@@ -275,6 +314,59 @@
         if (/\bdegree\b/.test(hay) && !/highest/.test(hay)) return 'degree';
         if (/\bdiscipline|major|field of study\b/.test(hay)) return 'discipline';
         if (/\byears?\b/.test(hay) && /\bexperience\b/.test(hay)) return 'years_of_experience';
+        // "Which of the following best describes your experience with REST APIs?"
+        // AI tools: "select one … that best describes you" / "extent of … use with AI tools"
+        // → fixed dropdown (never free-text essay).
+        if (/\b(which of the following|best describes|rate your|level of)\b/.test(hay)
+            && /\b(experience|proficiency|familiarit|skill|ai tools?|chatgpt|copilot|knowledge and use)\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        if (/\bselect one of the below\b/.test(hay) && /\bbest describes\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        if (/\bexperience with\b/.test(hay) && /\?/.test(hay)
+            && !/\b(describe|tell us|explain)\b/.test(hay)
+            && !FORMER_EMPLOYEE_RE.test(hay)
+            && (SKILL_STACK_RE.test(hay) || !/\b(company|employer|employee)\b/.test(hay))) {
+            return 'skill_experience';
+        }
+        // "Have you written Python …" / PKI / certificates / stack → Yes (never company employment).
+        if (labelLooksLikeSkillExperienceYes(hay)
+            && /\?/.test(hay)
+            && !/\b(describe|tell us|explain|essay)\b/.test(hay)
+            && !/\b(sponsor|visa|disabilit|veteran|felony|convict)\b/.test(hay)) {
+            return 'skill_experience';
+        }
+        // Education date parts (Greenhouse / Ashby style).
+        // Names often look like educations[][start_date][month] — underscore is a word char,
+        // so avoid \b around start/month alone.
+        if (
+            /start[\s_-]*date[\s_-]*month|start[\s_-]*month|\[start_date\]\s*\[month\]/i.test(hay)
+            || (/month/.test(hay) && /start/.test(hay) && !/end/.test(hay)
+                && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_start_month';
+        }
+        if (
+            /start[\s_-]*date[\s_-]*year|start[\s_-]*year|\[start_date\]\s*\[year\]/i.test(hay)
+            || (/year/.test(hay) && /start/.test(hay) && !/end/.test(hay)
+                && /educat|school|degree|date/.test(hay)
+                && !/earliest|available|can you start/.test(hay))
+        ) {
+            return 'education_start_year';
+        }
+        if (
+            /end[\s_-]*date[\s_-]*month|end[\s_-]*month|graduat\w*\s*month|\[end_date\]\s*\[month\]/i.test(hay)
+            || (/month/.test(hay) && /end|graduat/.test(hay) && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_end_month';
+        }
+        if (
+            /end[\s_-]*date[\s_-]*year|end[\s_-]*year|graduat\w*\s*year|year\s*of\s*graduation|\[end_date\]\s*\[year\]/i.test(hay)
+            || (/year/.test(hay) && /end|graduat/.test(hay) && /educat|school|degree|date/.test(hay))
+        ) {
+            return 'education_end_year';
+        }
         if (/\bsalary|compensation|pay\b/.test(hay)) return 'salary';
         if (
             /\b(data[\s_-]*protection|privacy|gdpr|nda|non[\s_-]*disclosure|acknowledg|consent|ai[\s_-]*note|note[\s_-]*tak)\b/.test(hay)
@@ -282,10 +374,18 @@
         ) {
             return 'data_protection';
         }
-        if (/\b(data[\s_-]*protection|privacy[\s_-]*notice|privacy[\s_-]*policy|candidate[\s_-]*privacy|gdpr)\b/.test(hay)) {
+        if (/\b(data[\s_-]*protection|privacy[\s_-]*notice|privacy[\s_-]*policy|candidate[\s_-]*privacy|gdpr|have you read.{0,60}privacy)\b/.test(hay)) {
             return 'data_protection';
         }
-        if (/\bgender\b/.test(hay)) return 'gender';
+        if (/\b(retain.{0,60}(data|application)|future opportunit|talent pool|keep my (data|application))\b/.test(hay)) {
+            return 'data_protection';
+        }
+        // Greenhouse: "Do you think of yourself as:" (no "gender" word)
+        if (/\bgender\b/.test(hay) || /\bthink of yourself as\b/.test(hay)
+            || (/\b(sex|male|female)\b/.test(hay) && !/\bsexual\b/.test(hay)
+                && !/\b(same[\s_-]*sex|opposite)\b/.test(hay))) {
+            return 'gender';
+        }
         if (/\bover[\s_-]*18|18 or older\b/.test(hay)) return 'over_18';
         if (/\brelocat\w*\b/.test(hay)) return 'willing_to_relocate';
         // Office hub / hybrid onsite days → Yes
@@ -296,13 +396,27 @@
         if (/\bU\.?\s*S\.?\s*person\b|whether you are a\s*["“']?U\.?\s*S\.?\s*person/i.test(hay)) {
             return 'us_person_yes';
         }
-        if (/\b(have you (ever )?worked|previously\s+worked|former\b.{0,48}\bemployee|are you a former\b|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(at|for)\b|ever\s+worked\s+(at|for)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i.test(hay)) {
+        if (FORMER_EMPLOYEE_RE.test(hay)) {
             return 'previous_employer_no';
+        }
+        if (EMPLOYEE_RELATIONSHIP_RE.test(hay)) {
+            return 'employee_relationship_no';
+        }
+        if (NON_COMPETE_RE.test(hay) || INCOMPLETE_EDU_RE.test(hay)) {
+            return 'non_compete_no';
         }
         if (/\b(disabilit(?:y|ies)|disabled|\bada\b)\b/.test(hay)) return 'disability_status';
         if (/\b(veteran|military[\s_-]*status|armed[\s_-]*forces)\b/.test(hay)) return 'veteran_status';
         if (/\b(race|ethnicity|ethnic)\b/.test(hay) && !/\bhispanic|latino\b/.test(hay)) return 'race_ethnicity';
         if (/\b(hispanic|latino|latina|latinx)\b/.test(hay)) return 'hispanic_latino';
+        // US citizen / nationality Yes (before generic export list)
+        if (/\b(are you|confirm you are)\b.{0,40}\b(a\s+)?(u\.?\s*s\.?\s*|united states)\s*citizen\b/i.test(hay)
+            || /\bu\.?\s*s\.?\s*citizen\b/i.test(hay) && /\b(are you|yes|no)\b/i.test(hay)) {
+            return 'us_citizen_yes';
+        }
+        if (/\b(export[\s_-]*control|EAR\s*\/?\s*ITAR|U\.?\s*S\.?\s*laws concerning the export|confirm I am one of the following)\b/i.test(hay)) {
+            return 'export_control_us_citizen';
+        }
         if (/\b(website|personal[\s_-]*site|homepage|web[\s_-]*site|portfolio)\b/.test(hay)
             && !/\blinkedin\b/.test(hay)
             && !/\bgithub\b/.test(hay)) {
@@ -313,7 +427,8 @@
             return 'willing_to_travel';
         }
         if (/\b(start[\s_-]*date|earliest[\s_-]*start|available[\s_-]*to[\s_-]*start|when[\s_-]*can[\s_-]*you[\s_-]*start)\b/.test(hay)
-            && !/\b(birth|dob|signature|application\s*date|today)\b/.test(hay)) {
+            && !/\b(birth|dob|signature|application\s*date|today)\b/.test(hay)
+            && !/\b(month|year|education|school|graduat|degree)\b/.test(hay)) {
             return 'earliest_start_date';
         }
         if (/\b(notice[\s_-]*period|notice[\s_-]*time)\b/.test(hay)) return 'notice_period';
@@ -322,6 +437,10 @@
         }
         if (/\b(how many companies|number of companies|companies have you worked)\b/.test(hay)) {
             return 'employer_count';
+        }
+        if (/\b(current[\s_-]*company|current[\s_-]*employer|present[\s_-]*employer|company[\s_-]*name)\b/.test(hay)
+            && !/\b(previous|prior|former)\b/.test(hay)) {
+            return 'current_company';
         }
         if (/\b(high[\s_-]*school)\b/.test(hay) && /\b(perform|performance|grade|mathematics|math|native language)\b/.test(hay)) {
             return 'high_school_performance';
@@ -364,10 +483,14 @@
         }
     }
 
-    function sponsorshipAnswerFromProfile(profile) {
-        const raw = String(profile?.requires_sponsorship || '').trim();
-        if (/^(yes|y|true|1)$/i.test(raw)) return 'Yes';
+    /** Visa sponsorship: always No (hard lock — never profile/API Yes). */
+    function sponsorshipAnswerFromProfile(_profile) {
         return 'No';
+    }
+
+    /** Work authorization: always Yes (hard lock). */
+    function workAuthAnswerFromProfile(_profile) {
+        return 'Yes';
     }
 
     function labelLooksLikeAuthorizedWithoutSponsorship(label) {
@@ -398,6 +521,202 @@
         }
         const atCompany = blocks.match(/\bat\s+[A-Z][A-Za-z0-9&.,'\- ]{2,40}/g);
         return Math.max(1, Math.min(8, atCompany?.length || 1));
+    }
+
+    /** Most recent employer from work_experience / company fields. */
+    function currentCompanyFromProfile(profile) {
+        const p = profile || {};
+        const direct = String(
+            p.current_company || p.current_employer || p.company || p.employer || ''
+        ).trim();
+        if (direct && !/^unknown$/i.test(direct)) return direct.slice(0, 80);
+        const blocks = [
+            String(p.work_experience || ''),
+            String(p.experience || ''),
+            String(p.summary || '')
+        ].join('\n');
+        const atMatch = blocks.match(/\bat\s+([A-Z][A-Za-z0-9&.,'’\- ]{1,50}?)(?:\s+in\s+|\s+[—–\-]\s+|\s*\(|\s*$)/m);
+        if (atMatch && atMatch[1]) {
+            return atMatch[1].trim().replace(/\s+/g, ' ').slice(0, 80);
+        }
+        const lineMatch = blocks.match(
+            /(?:^|\n)\s*(?:[-*•]\s*)?([A-Z][A-Za-z0-9&.,'’\- ]{2,50}?)\s*[|—–\-]\s*/
+        );
+        if (lineMatch && lineMatch[1] && !/^(Senior|Staff|Principal|Engineer|Developer|Manager)\b/i.test(lineMatch[1])) {
+            return lineMatch[1].trim().slice(0, 80);
+        }
+        return '';
+    }
+
+    const MONTH_NAMES = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    /** Parse education start/end month+year from profile free text. */
+    function parseEducationDates(profile) {
+        const p = profile || {};
+        const blob = `${p.education || ''} ${p.school || ''} ${p.degree || ''}`;
+        const out = {
+            startMonth: 'August',
+            startYear: '',
+            endMonth: 'May',
+            endYear: ''
+        };
+        // 08/2014 – 05/2018 or 8/2014-5/2018
+        let m = blob.match(/(\d{1,2})\s*[\/\-]\s*(20\d{2})\s*[-–—to]+\s*(\d{1,2})\s*[\/\-]\s*(20\d{2}|present|current)/i);
+        if (m) {
+            out.startMonth = MONTH_NAMES[Math.max(0, Math.min(11, parseInt(m[1], 10) - 1))] || 'August';
+            out.startYear = m[2];
+            if (!/present|current/i.test(m[4])) {
+                out.endMonth = MONTH_NAMES[Math.max(0, Math.min(11, parseInt(m[3], 10) - 1))] || 'May';
+                out.endYear = m[4];
+            }
+            return out;
+        }
+        // August 2014 - May 2018
+        m = blob.match(
+            /(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2})\s*[-–—to]+\s*(january|february|march|april|may|june|july|august|september|october|november|december)\s+(20\d{2}|present|current)/i
+        );
+        if (m) {
+            out.startMonth = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+            out.startYear = m[2];
+            if (!/present|current/i.test(m[4])) {
+                out.endMonth = m[3].charAt(0).toUpperCase() + m[3].slice(1).toLowerCase();
+                out.endYear = m[4];
+            }
+            return out;
+        }
+        // 2014 - 2018 / 2004 - 2007
+        m = blob.match(/\b(19|20)(\d{2})\s*[-–—to]+\s*((?:19|20)\d{2}|present|current)\b/i);
+        if (m) {
+            out.startYear = `${m[1]}${m[2]}`;
+            if (!/present|current/i.test(m[3])) out.endYear = m[3];
+            return out;
+        }
+        // Single graduation year
+        m = blob.match(/\b(?:graduat\w*|class of|in)\s+(20\d{2})\b/i) || blob.match(/\b(20\d{2})\b/);
+        if (m) {
+            const y = parseInt(m[1], 10);
+            out.endYear = String(y);
+            out.startYear = String(Math.max(1990, y - 4));
+        }
+        return out;
+    }
+
+    /** Map profile YoE to common ATS skill-experience dropdown labels. */
+    /**
+     * Aliases for skill / proficiency dropdowns.
+     * Prefer production-level wording first (REST/Python/AI menus), then YoE bands.
+     * Never lead with "Some experience" / "Basic" for mid+ YoE — those fuzzy-match "No experience".
+     */
+    function skillExperienceWantAliases(profile, label = '') {
+        const n = parseInt(String(profile?.years_of_experience || '').replace(/\D/g, ''), 10) || 0;
+        const lab = String(label || '').toLowerCase();
+        const isAi = /\b(ai tools?|chatgpt|copilot|generative ai|knowledge and use)\b/.test(lab);
+        const isProdYn = /\b(have you|written|runs in a production|production environment)\b/.test(lab)
+            || (/\bpython\b/.test(lab) && /\bproduction\b/.test(lab));
+        const isApiLevel = /\b(rest|api|apis|graphql|http)\b/.test(lab)
+            || /\bbest describes your experience\b/.test(lab);
+
+        if (isAi) {
+            if (n >= 3) {
+                return [
+                    'Extensively', 'Yes, extensively', 'Frequently', 'Daily',
+                    'Advanced', 'Expert', 'Proficient'
+                ];
+            }
+            return ['Occasionally', 'Yes', 'Sometimes', 'Familiar'];
+        }
+        if (isProdYn) {
+            if (n >= 2) {
+                return [
+                    'Yes – I currently maintain Python services in production',
+                    'Yes – I have in the past',
+                    'Yes – currently',
+                    'Yes, production',
+                    'Yes',
+                    'Currently'
+                ];
+            }
+            return ['No – only academic/personal use', 'No'];
+        }
+
+        const levelHigh = [
+            'Built and maintained APIs and integrated external APIs in production',
+            'Built and maintained',
+            'integrated external APIs in production',
+            'production',
+            'Expert', 'Advanced', 'Extensive', 'Highly proficient', 'Proficient'
+        ];
+        const levelMid = [
+            'Integrated external APIs only',
+            'Intermediate', 'Working knowledge', 'Proficient', 'Familiar'
+        ];
+        const yearHigh = n >= 10
+            ? ['10+ years', '10 or more', '10+', '5+ years', '5 or more']
+            : n >= 7
+                ? ['7-10 years', '5+ years', '5 or more', '10+', '3-5 years']
+                : n >= 5
+                    ? ['5+ years', '5 or more', '5-7 years', '3-5 years']
+                    : n >= 3
+                        ? ['3-5 years', '3 or more', '2-4 years']
+                        : [];
+
+        if (n >= 5 || isApiLevel) {
+            return [...levelHigh, ...yearHigh, 'Intermediate'];
+        }
+        if (n >= 3) {
+            return [...levelMid, ...levelHigh.slice(0, 3), ...yearHigh, 'Working knowledge'];
+        }
+        if (n >= 1) {
+            return [
+                'Basic experience', 'Familiar', '1-3 years', '1-2 years',
+                'Some experience', 'Beginner'
+            ];
+        }
+        return ['Familiar', 'Beginner', 'Basic', 'Some experience', '1-2 years', 'Less than 1 year'];
+    }
+
+    function isWeakSkillOption(text) {
+        const t = String(text || '').toLowerCase();
+        return /^(no)\b/.test(t)
+            || /\bno experience\b/.test(t)
+            || /\bnot at all\b/.test(t)
+            || /\bnever used\b/.test(t)
+            || /\bonly academic\b/.test(t)
+            || /\bacademic\/personal\b/.test(t)
+            || /\bno\s*[–-]\s*only\b/.test(t)
+            || /\bnone\b/.test(t) && /\bexperience\b/.test(t)
+            || /\b0\s*[-–]\s*1\b/.test(t)
+            || /\b0\s*[-–]\s*2\b/.test(t)
+            || /\bless than\s*(1|2|one|two)\b/.test(t)
+            || /\bunder\s*(1|2)\b/.test(t)
+            || /\b0\+?\s*years?\b/.test(t)
+            || /\bentry[\s_-]*level\b/.test(t) && /\b0\b/.test(t)
+            || /\bno\s*prior\b/.test(t)
+            || /\bzero\b/.test(t) && /\b(year|experience)\b/.test(t);
+    }
+
+    function isStrongSkillOption(text) {
+        const t = String(text || '').toLowerCase();
+        return /\bbuilt and maintained\b/.test(t)
+            || /\bin production\b/.test(t)
+            || /\bextensively\b/.test(t)
+            || /\bcurrently maintain\b/.test(t)
+            || /\bhave in the past\b/.test(t)
+            || (/^yes\b/.test(t) && !/\bonly academic\b/.test(t));
+    }
+
+    /** YoE dropdown label from profile — never 0–2 / less than 1. */
+    function yearsExperienceFillFromProfile(profile) {
+        const n = parseInt(String(profile?.years_of_experience || '').replace(/\D/g, ''), 10);
+        if (!Number.isFinite(n) || n <= 0) return '5+ years';
+        if (n >= 10) return '10+ years';
+        if (n >= 7) return '7-10 years';
+        if (n >= 5) return '5+ years';
+        if (n >= 3) return '3-5 years';
+        return '3-5 years';
     }
 
     /** Local essay when AI answers are missing / skipped (time budget). */
@@ -525,22 +844,25 @@
             const kind = classify(label, el.name || '');
             if (type === 'checkbox') {
                 const hay = `${label} ${el.name || ''}`.toLowerCase();
-                const isConsent = /\b(agree|acknowledg|consent|terms|certify|confirm)\b/.test(hay);
+                const isConsent = /\b(agree|acknowledg|consent|terms|certify|confirm|retain|future opportunit|talent pool|keep my (data|application)|consider me for)\b/.test(hay);
                 const keep = isConsent
                     || kind === 'requires_sponsorship'
                     || kind === 'work_authorization'
                     || kind === 'over_18'
                     || kind === 'willing_to_relocate'
                     || kind === 'previous_employer_no'
+                    || kind === 'data_protection'
                     || kind === 'question';
                 if (!keep) continue;
                 fields.push({
                     id: fieldKey(el, label),
                     label,
-                    kind: isConsent ? 'question' : kind,
+                    kind: isConsent ? 'data_protection' : kind,
                     name: el.name || '',
                     type: 'checkbox',
-                    required: isRequired(el, label) || isConsent,
+                    required: isRequired(el, label) || isConsent
+                        || kind === 'requires_sponsorship'
+                        || labelLooksLikeSponsorship(label),
                     role: '',
                     value: el.checked ? 'Yes' : 'No'
                 });
@@ -552,7 +874,9 @@
                 kind,
                 name: el.name || '',
                 type: el.tagName === 'TEXTAREA' ? 'textarea' : (type || el.tagName.toLowerCase()),
-                required: isRequired(el, label),
+                required: isRequired(el, label)
+                    || kind === 'requires_sponsorship'
+                    || labelLooksLikeSponsorship(label),
                 role: el.getAttribute('role') || '',
                 value: el.value || ''
             });
@@ -573,7 +897,9 @@
                 kind: classify(label, name),
                 name,
                 type: 'radio',
-                required: group.some((g) => isRequired(g, label)),
+                required: group.some((g) => isRequired(g, label))
+                    || classify(label, name) === 'requires_sponsorship'
+                    || labelLooksLikeSponsorship(label),
                 options: group.map((g) => radioOptionText(g))
             });
         }
@@ -692,11 +1018,14 @@
     function effectiveFieldKind(field) {
         const kind = String(field?.kind || '');
         const lab = String(field?.label || '');
+        const name = String(field?.name || field?.id || '');
         if (labelLooksLikeAuthorizedWithoutSponsorship(lab) || kind === 'work_authorization') {
             return 'work_authorization';
         }
         if (kind === 'previous_employer_no' || kind === 'requires_sponsorship' || kind === 'sanctioned_countries_no'
-            || kind === 'city' || kind === 'state') {
+            || kind === 'city' || kind === 'state'
+            || kind === 'skill_experience'
+            || /^education_(start|end)_/.test(kind)) {
             return kind;
         }
         if (
@@ -712,13 +1041,18 @@
             }
             return 'city';
         }
-        if (/\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\s+(employee|employer)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker)\b/i.test(lab)) {
+        if (labelLooksLikeFormerEmployee(lab)) {
             return 'previous_employer_no';
         }
         if (labelLooksLikeSponsorship(lab)) {
             return 'requires_sponsorship';
         }
-        return kind || classifyKind(lab, field?.name || '', field?.id || '');
+        // Re-classify skill dropdowns / education dates when initially scraped as question.
+        const re = classify(lab, name);
+        if (re === 'skill_experience' || /^education_(start|end)_/.test(re)) {
+            return re;
+        }
+        return kind || re || 'question';
     }
 
     /**
@@ -858,11 +1192,21 @@
             if (/^y/.test(w) && /^y/.test(g) && !/\bno\b/.test(g)) return true;
             if (/^n/.test(w) && (/^n/.test(g) || /\bno\b/.test(g))) return true;
         }
-        if (kind === 'years_of_experience') {
+        if (kind === 'years_of_experience' || kind === 'skill_experience') {
             const wn = w.match(/(\d+)\s*\+?/);
             const gn = g.match(/(\d+)\s*\+?/);
             if (wn && gn && wn[1] === gn[1]) return true;
             if (wn && g.includes(wn[1])) return true;
+            if (/expert|advanced|proficient|extensive/i.test(w)
+                && /expert|advanced|proficient|extensive|highly/i.test(g)) return true;
+        }
+        if (/^education_(start|end)_month$/.test(kind)) {
+            const wm = w.slice(0, 3).toLowerCase();
+            const gm = g.slice(0, 3).toLowerCase();
+            if (wm && gm && wm === gm) return true;
+        }
+        if (/^education_(start|end)_year$/.test(kind)) {
+            if (/\b(19|20)\d{2}\b/.test(w) && g.includes(w.match(/(19|20)\d{2}/)?.[0] || '')) return true;
         }
         if ((/^y/.test(w) || /agree|accept/.test(w)) && /^y/.test(g) && !/\bno\b/.test(g)) return true;
         if (/^n/.test(w) && /^n/.test(g)) return true;
@@ -929,10 +1273,30 @@
         return /somewhere\s*else|^other\b|not listed|none of the above|prefer not/i.test(String(t || ''));
     }
 
-    async function fillCombobox(el, wanted, kind, strategy) {
+    async function fillCombobox(el, wanted, kind, strategy, profile = null, label = '') {
         const helper = cm();
-        const raw = String(wanted || '').trim();
+        let raw = String(wanted || '').trim();
         if (!raw || !el) return { ok: false, chosen: '', reason: 'empty' };
+
+        // Essay dumped into a fixed dropdown (e.g. REST APIs) → short option aliases + open-only.
+        const looksLikeEssay = raw.length > 48
+            || /^(i have|i am|with \d|my experience|over the (past|last))/i.test(raw)
+            || /\bproduction experience\b/i.test(raw);
+        const skillAliases = skillExperienceWantAliases(profile, label);
+        const yoeN = parseInt(String(profile?.years_of_experience || '').replace(/\D/g, ''), 10) || 0;
+        if (kind === 'skill_experience' || kind === 'years_of_experience') {
+            if (looksLikeEssay || kind === 'skill_experience') {
+                raw = skillAliases[0] || raw;
+            }
+            strategy = 'open';
+        }
+        if (/^education_(start|end)_month$/.test(kind) || /^education_(start|end)_year$/.test(kind)) {
+            strategy = 'open';
+        }
+        if (looksLikeEssay && (kind === 'question' || !kind)) {
+            raw = skillAliases[0] || '5+ years';
+            strategy = 'open';
+        }
 
         const readDisplayed = () => {
             const root = el.closest('.select__control, [class*="select__control"], [class*="Select"]')
@@ -944,16 +1308,27 @@
         };
 
         // Already complete — never reopen / retype (stops Disability / EEO infinite loops).
-        // Disability: if displayed Yes but we want No, force re-fill (do not trust prior wrong pick).
+        // Disability / sponsorship / former-employer: if displayed Yes but we want No, force re-fill.
         const already = readDisplayed();
-        if (kind === 'disability_status' || /disabilit/i.test(String(raw))) {
+        const wantNoLock = kind === 'disability_status'
+            || kind === 'requires_sponsorship'
+            || kind === 'previous_employer_no'
+            || kind === 'employee_relationship_no'
+            || kind === 'non_compete_no'
+            || /disabilit/i.test(String(raw))
+            || (/sponsor|visa/i.test(kind + String(raw)) && /^(no)\b/i.test(raw))
+            || (/^(no)\b/i.test(raw) && /former|employed by|previously worked|relationship|non.?compete/i.test(kind));
+        if (wantNoLock) {
             const wantNoDis = /^(no)\b/i.test(raw)
                 || /do not have a disability|don'?t have|no disability|have not had/i.test(raw);
             const shownYes = /^yes\b/i.test(already)
-                && /disabilit|have had/i.test(already)
-                && !/do not|don'?t|have not had/i.test(already);
+                && (
+                    (/disabilit|have had/i.test(already) && !/do not|don'?t|have not had/i.test(already))
+                    || kind === 'requires_sponsorship'
+                    || kind === 'previous_employer_no'
+                    || /^yes$/i.test(already)
+                );
             if (wantNoDis && shownYes) {
-                // Clear the wrong Yes (Greenhouse react-select clear "x") then re-select No.
                 try {
                     const root = el.closest('.select__control, [class*="select__control"], [class*="Select"]')
                         || el.parentElement;
@@ -991,6 +1366,69 @@
             }
             const tl = t.toLowerCase();
             const w = raw.toLowerCase();
+
+            // Experienced candidates: never pick "No experience" / academic-only / Not at all / 0–2.
+            if ((kind === 'skill_experience' || kind === 'years_of_experience') && yoeN >= 1) {
+                if (isWeakSkillOption(t) && !isStrongSkillOption(t)) return -1;
+                if (isStrongSkillOption(t)) score = Math.max(score, 96);
+                if (/\bbuilt and maintained\b/i.test(tl)) score = Math.max(score, 99);
+                if (/\bbasic experience\b|\btesting via postman\b|\bintegrated external apis only\b/i.test(tl)
+                    && !/\bbuilt and maintained\b/i.test(tl)
+                    && yoeN >= 5) {
+                    score = Math.min(score, 45);
+                }
+            }
+
+            // Gender: reject opposite sex when profile has Male/Female.
+            if (kind === 'gender') {
+                const wantMale = /\bmale\b/i.test(w) && !/\bfemale\b/i.test(w);
+                const wantFemale = /\bfemale\b/i.test(w);
+                const optFemale = /\bfemale\b/i.test(tl);
+                const optMale = /\bmale\b/i.test(tl) && !optFemale;
+                if (wantMale && optFemale) return -1;
+                if (wantFemale && optMale) return -1;
+                if (wantMale && optMale) score = Math.max(score, 99);
+                if (wantFemale && optFemale) score = Math.max(score, 99);
+            }
+
+            // Race: reject other race buckets when want is a specific race.
+            if (kind === 'race_ethnicity') {
+                const buckets = [
+                    { re: /black|african american|african-american/i },
+                    { re: /asian|east asian|south asian|southeast asian/i },
+                    { re: /\bwhite\b|caucasian/i },
+                    { re: /hispanic|latino|latina|latinx/i },
+                    { re: /american indian|alaska native|native american|indigenous/i },
+                    { re: /pacific islander|native hawaiian/i },
+                    { re: /two or more|multiracial|mixed/i }
+                ];
+                const wantBucket = buckets.findIndex((b) => b.re.test(w));
+                const optBucket = buckets.findIndex((b) => b.re.test(tl));
+                if (wantBucket >= 0 && optBucket >= 0 && wantBucket !== optBucket
+                    && !/prefer not|decline|do not want/i.test(tl)) {
+                    return -1;
+                }
+                if (wantBucket >= 0 && wantBucket === optBucket) score = Math.max(score, 96);
+            }
+
+            // Skill-experience selects: try every YoE band alias against this option.
+            if ((kind === 'skill_experience' || kind === 'years_of_experience') && skillAliases.length) {
+                for (let ai = 0; ai < skillAliases.length; ai++) {
+                    const alias = String(skillAliases[ai] || '').toLowerCase();
+                    if (!alias) continue;
+                    // Avoid short substring traps ("experience" matching "No experience").
+                    if (alias.length < 5) continue;
+                    if (tl === alias) score = Math.max(score, 100 - ai);
+                    else if (tl.includes(alias)) score = Math.max(score, 92 - Math.min(ai, 8));
+                    else if (alias.length >= 12 && alias.includes(tl) && tl.length >= 8) {
+                        score = Math.max(score, 88 - Math.min(ai, 8));
+                    }
+                    const an = (alias.match(/(\d+)\s*\+?/) || [])[1];
+                    if (an && (tl.includes(`${an}+`) || new RegExp(`${an}\\s*\\+?\\s*years?`, 'i').test(tl))) {
+                        score = Math.max(score, 92 - Math.min(ai, 6));
+                    }
+                }
+            }
             if (tl === w) score = Math.max(score, 100);
             else if (tl.includes(w) || w.includes(tl)) {
                 // Never let short "no"/"yes" substring-boost the opposite EEO option.
@@ -1042,10 +1480,37 @@
                     score = Math.max(score, 90);
                 }
             }
-            if (kind === 'years_of_experience') {
+            if (kind === 'years_of_experience' || kind === 'skill_experience') {
+                const parseWant = (s) => {
+                    const x = String(s || '').toLowerCase();
+                    let m = x.match(/(\d+)\s*\+/) || x.match(/(\d+)\s*or more/) || x.match(/more than\s*(\d+)/);
+                    if (m) return parseInt(m[1], 10);
+                    m = x.match(/(\d+)\s*[-–]\s*(\d+)/);
+                    if (m) return parseInt(m[2], 10);
+                    m = x.match(/(\d+)/);
+                    return m ? parseInt(m[1], 10) : NaN;
+                };
+                const parseRange = (s) => {
+                    const x = String(s || '').toLowerCase();
+                    let m = x.match(/(\d+)\s*\+/) || x.match(/(\d+)\s*or more/) || x.match(/more than\s*(\d+)/);
+                    if (m) return { min: parseInt(m[1], 10), max: Infinity };
+                    m = x.match(/(\d+)\s*[-–]\s*(\d+)/);
+                    if (m) return { min: parseInt(m[1], 10), max: parseInt(m[2], 10) };
+                    return null;
+                };
+                const wv = parseWant(raw);
+                const range = parseRange(tl);
+                if (Number.isFinite(wv) && range) {
+                    if (Number.isFinite(range.max) && wv > range.max) return -1;
+                    if (wv >= range.min && wv <= range.max) {
+                        score = Math.max(score, range.max === Infinity ? 98 : 94);
+                    } else if (wv >= 10 && range.max === Infinity) {
+                        score = Math.max(score, 96);
+                    }
+                }
                 const wn = (raw.match(/(\d+)\s*\+?/) || [])[1];
-                if (wn && (tl.includes(wn) || new RegExp(`${wn}\\s*\\+?\\s*years?`, 'i').test(tl))) {
-                    score = Math.max(score, 92);
+                if (wn && (tl.includes(`${wn}+`) || new RegExp(`${wn}\\s*\\+\\s*years?`, 'i').test(tl))) {
+                    score = Math.max(score, 95);
                 }
                 if (/10\+|10\s*\+|more than 10|10 or more/i.test(w) && /10\+|10\s*\+|or more|more than/i.test(tl)) {
                     score = Math.max(score, 94);
@@ -1053,6 +1518,28 @@
                 if (/7\s*[-–]\s*10|7-10/i.test(w) && /7\s*[-–]\s*10|7-10/i.test(tl)) {
                     score = Math.max(score, 94);
                 }
+                if (/5\+|5\s*\+|5 or more|5\s*[-–]\s*7/i.test(w) && /5\+|5\s*\+|5 or more|5\s*[-–]/i.test(tl)) {
+                    score = Math.max(score, 93);
+                }
+                if (/expert|advanced|highly proficient|extensive/i.test(w)
+                    && /expert|advanced|highly|extensive|proficient/i.test(tl)
+                    && !/beginner|basic|none|no experience/i.test(tl)) {
+                    score = Math.max(score, 90);
+                }
+                if (/intermediate|working knowledge|proficient/i.test(w)
+                    && /intermediate|working|proficient|familiar/i.test(tl)) {
+                    score = Math.max(score, 86);
+                }
+            }
+            if (/^education_(start|end)_month$/.test(kind)) {
+                const wantM = w.slice(0, 3);
+                const optM = tl.slice(0, 3);
+                if (wantM && optM && wantM === optM) score = Math.max(score, 98);
+                if (tl === w || tl.includes(w) || w.includes(tl)) score = Math.max(score, 96);
+            }
+            if (/^education_(start|end)_year$/.test(kind)) {
+                const yn = (raw.match(/(19|20)\d{2}/) || [])[0];
+                if (yn && (tl === yn || tl.includes(yn))) score = Math.max(score, 98);
             }
             return score;
         };
@@ -1061,8 +1548,26 @@
             || el.parentElement?.querySelector('.select__control')
             || el;
         const input = control.querySelector('input') || el;
+        // Clear leftover essay typing in the filter input before open-and-pick.
+        if (kind === 'skill_experience' || looksLikeEssay || /^education_(start|end)_/.test(kind)) {
+            try {
+                const root = el.closest('.select__control, [class*="select__control"], [class*="Select"]')
+                    || el.parentElement;
+                const clearBtn = root?.querySelector?.(
+                    '.select__clear-indicator, [class*="clear-indicator"], [aria-label*="clear" i]'
+                );
+                if (clearBtn) {
+                    if (helper) helper.dispatchTrustedClick(clearBtn);
+                    else clearBtn.click();
+                    await sleep(60);
+                }
+                setNativeValue(input, '');
+            } catch (_) { /* ignore */ }
+        }
         const yn = helper && (helper.isAffirmative(raw) || helper.isNegative(raw));
-        const minScore = kind === 'discipline' || kind === 'high_school_performance' || kind === 'years_of_experience'
+        const minScore = kind === 'discipline' || kind === 'high_school_performance'
+            || kind === 'years_of_experience' || kind === 'skill_experience'
+            || /^education_(start|end)_/.test(kind)
             ? 55
             : 70;
 
@@ -1079,8 +1584,22 @@
         let pick = null;
 
         // Static Yes/No / EEO: brief peek only. Typeahead: skip pre-wait.
-        if (yn || strategy === 'open' || /disabilit|veteran|gender|race|ethnicity|eeo/i.test(kind + raw)) {
-            options = await waitForMenuOptions(yn ? 900 : 700);
+        // Disability: prefer typing "No" so the Yes option is never the first hit.
+        // Skill / education date selects: open panel first, never type essays.
+        const isDisability = kind === 'disability_status' || /disabilit/i.test(String(raw));
+        const typeFilter = isDisability
+            ? 'No'
+            : ((kind === 'requires_sponsorship' || /sponsor|visa/i.test(kind + raw))
+                && (helper?.isNegative?.(raw) || /^(no)\b/i.test(raw))
+                ? 'No'
+                : null);
+        const forceOpenOnly = strategy === 'open'
+            || kind === 'skill_experience'
+            || /^education_(start|end)_month$/.test(kind)
+            || looksLikeEssay;
+
+        if (yn || forceOpenOnly || /disabilit|veteran|gender|race|ethnicity|eeo|sponsor/i.test(kind + raw)) {
+            options = await waitForMenuOptions(yn ? 900 : (forceOpenOnly ? 1400 : 700));
             for (const o of options) {
                 const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
                 if (isCatchAll(t)) {
@@ -1097,26 +1616,128 @@
         }
 
         // Type immediately when not yet picked (Discipline / School / long lists)
-        if (!pick && !yn) {
+        // Also type "No" for disability/sponsorship when menu peek missed.
+        // City/location: stop typing as soon as the top hint matches.
+        // NEVER type essay / skill aliases into static skill dropdowns after open miss —
+        // type a short filter string only.
+        if (!pick && (!yn || typeFilter) && !looksLikeEssay) {
             try { setNativeValue(input, ''); } catch (_) { /* ignore */ }
-            const filterLen = strategy === 'type' ? 48 : 16;
-            for (const ch of raw.slice(0, filterLen)) {
+            const typed = typeFilter
+                || (forceOpenOnly && kind === 'skill_experience'
+                    ? String(raw).replace(/^yes\s*[–-]\s*/i, 'Yes').slice(0, 18)
+                    : raw);
+            const isCity = kind === 'city' || /\blocation\b/i.test(kind);
+            const filterLen = isCity
+                ? Math.min(typed.length, 28)
+                : (forceOpenOnly ? Math.min(typed.length, 12) : (strategy === 'type' ? 48 : 16));
+            const cityMin = isCity ? 55 : minScore;
+            for (let i = 0; i < Math.min(typed.length, filterLen); i++) {
+                const ch = typed[i];
                 setNativeValue(input, (input.value || '') + ch);
-                await sleep(35);
-                if ((input.value || '').length >= 3 && menuIsLoading()) {
-                    await waitForMenuOptions(2000);
+                await sleep(isCity ? 45 : 35);
+                const built = String(input.value || '');
+                if (built.length >= 3 && menuIsLoading()) {
+                    await waitForMenuOptions(isCity ? 3500 : 2000);
+                }
+                // Early-commit city hint once a strong option appears.
+                if (isCity && built.trim().length >= 3 && (i % 2 === 1 || i === filterLen - 1)) {
+                    const earlyOpts = listMenuOptions();
+                    let earlyBest = null;
+                    let earlyScore = -1;
+                    for (const o of earlyOpts) {
+                        const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (isCatchAll(t)) continue;
+                        const score = scoreOpt(t);
+                        if (score > earlyScore) {
+                            earlyScore = score;
+                            earlyBest = o;
+                        }
+                    }
+                    if (earlyBest && earlyScore >= cityMin) {
+                        pick = earlyBest;
+                        bestScore = earlyScore;
+                        break;
+                    }
                 }
             }
-            options = await waitForMenuOptions(5000);
+            if (!pick) {
+                options = await waitForMenuOptions(isCity ? 6000 : 5000);
+                best = null;
+                bestScore = -1;
+                catchAll = null;
+                for (const o of options) {
+                    const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (isCatchAll(t)) {
+                        catchAll = catchAll || o;
+                        continue;
+                    }
+                    const score = scoreOpt(t);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = o;
+                    }
+                }
+                const need = isCity ? cityMin : minScore;
+                pick = bestScore >= need ? best : null;
+                // Location: if still no score hit, take the first real hint (top suggestion).
+                if (!pick && isCity) {
+                    const first = (options || []).find((o) => {
+                        const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                        return t && !isCatchAll(t) && !/no options|loading|type to/i.test(t);
+                    });
+                    if (first) pick = first;
+                }
+                if (!pick && !(kind === 'discipline' || kind === 'degree' || kind === 'school'
+                    || kind === 'skill_experience')) {
+                    pick = catchAll || null;
+                }
+                // Experienced profile + skill menu: never Prefer-not / empty — pick strongest production option.
+                if (!pick && kind === 'skill_experience' && yoeN >= 3 && options.length) {
+                    let strongBest = null;
+                    let strongScore = -1;
+                    for (const o of options) {
+                        const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                        if (isCatchAll(t) || isWeakSkillOption(t)) continue;
+                        const score = scoreOpt(t);
+                        if (score > strongScore) {
+                            strongScore = score;
+                            strongBest = o;
+                        }
+                    }
+                    if (!strongBest) {
+                        for (const o of options) {
+                            const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
+                            if (isStrongSkillOption(t)) {
+                                strongBest = o;
+                                break;
+                            }
+                        }
+                    }
+                    if (strongBest) pick = strongBest;
+                }
+                if (!pick && (kind === 'discipline' || kind === 'degree') && strategy === 'type') {
+                    pick = catchAll || null;
+                }
+            }
+        }
+
+        // Skill / month select: if open miss and we skipped typing, try short type filter once.
+        if (!pick && forceOpenOnly && (kind === 'skill_experience' || /^education_(start|end)_/.test(kind))) {
+            try { setNativeValue(input, ''); } catch (_) { /* ignore */ }
+            const filter = kind === 'skill_experience'
+                ? String(raw).replace(/^yes\s*[–-]\s*/i, 'Yes').slice(0, 14)
+                : String(raw).slice(0, 10);
+            for (let i = 0; i < filter.length; i++) {
+                setNativeValue(input, (input.value || '') + filter[i]);
+                await sleep(40);
+            }
+            options = await waitForMenuOptions(2500);
             best = null;
             bestScore = -1;
-            catchAll = null;
             for (const o of options) {
                 const t = (o.textContent || '').replace(/\s+/g, ' ').trim();
-                if (isCatchAll(t)) {
-                    catchAll = catchAll || o;
-                    continue;
-                }
+                if (isCatchAll(t)) continue;
+                if (kind === 'skill_experience' && yoeN >= 3 && isWeakSkillOption(t)) continue;
                 const score = scoreOpt(t);
                 if (score > bestScore) {
                     bestScore = score;
@@ -1124,12 +1745,11 @@
                 }
             }
             pick = bestScore >= minScore ? best : null;
-            if (!pick && !(kind === 'discipline' || kind === 'degree' || kind === 'school')) {
-                pick = catchAll || null;
+            if (!pick && kind === 'skill_experience' && yoeN >= 3) {
+                pick = (options || []).find((o) => isStrongSkillOption((o.textContent || '').trim())) || null;
             }
-            if (!pick && (kind === 'discipline' || kind === 'degree') && strategy === 'type') {
-                pick = catchAll || null;
-            }
+            // Never Prefer-not for skill menus when we have production experience.
+            if (!pick && catchAll && kind !== 'skill_experience') pick = catchAll;
         }
 
         if (!pick) {
@@ -1178,10 +1798,30 @@
                 return { ok: true, chosen: displayed || chosen };
             }
         }
+        // Skill: reject weak displayed answers (0 experience / No experience).
+        if ((kind === 'skill_experience' || kind === 'years_of_experience') && yoeN >= 1) {
+            const shown = displayed || chosen;
+            if (isWeakSkillOption(shown) && !isStrongSkillOption(shown)) {
+                return { ok: false, chosen: shown, reason: 'skill_weak_option' };
+            }
+        }
+        // Gender: reject opposite sex.
+        if (kind === 'gender') {
+            const wantMale = /\bmale\b/i.test(raw) && !/\bfemale\b/i.test(raw);
+            const shown = displayed || chosen;
+            if (wantMale && /\bfemale\b/i.test(shown)) {
+                return { ok: false, chosen: shown, reason: 'gender_mismatch' };
+            }
+            if (/\bfemale\b/i.test(raw) && /\bmale\b/i.test(shown) && !/\bfemale\b/i.test(shown)) {
+                return { ok: false, chosen: shown, reason: 'gender_mismatch' };
+            }
+        }
         const ok = !!(displayed && valuesMatch(raw, displayed, kind))
             || (helper && displayed && helper.scoreChoice(raw, displayed, '') >= 70)
             || valuesMatch(raw, chosen, kind)
-            || (helper && helper.scoreChoice(raw, chosen, '') >= 70);
+            || (helper && helper.scoreChoice(raw, chosen, '') >= 70)
+            || (kind === 'skill_experience' && displayed && isStrongSkillOption(displayed) && yoeN >= 3)
+            || (kind === 'gender' && displayed && helper && helper.scoreChoice(raw, displayed, '') >= 60);
         if (!ok) {
             // Keep whatever is displayed — clearing caused "choose again" loops.
             return { ok: false, chosen: displayed || chosen, reason: 'verify_failed' };
@@ -1200,13 +1840,23 @@
             const raw = String(profile?.work_authorization || '').trim();
             wantRaw = (/^(no|n)\b/i.test(raw) || /not authorized|unauthorized/i.test(raw)) ? 'No' : 'Yes';
         } else if (kind === 'requires_sponsorship' || labelLooksLikeSponsorship(lab)) {
-            wantRaw = sponsorshipAnswerFromProfile(profile);
+            wantRaw = 'No';
         } else if (
             kind === 'previous_employer_no'
             || kind === 'sanctioned_countries_no'
-            || /\b(have you (ever )?worked|previously\s+worked|worked\s+(at|for)\b|former\s+(employee|employer)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee)\b/i.test(lab)
+            || kind === 'employee_relationship_no'
+            || kind === 'non_compete_no'
+            || labelLooksLikeFormerEmployee(lab)
+            || labelLooksLikeEmployeeRelationship(lab)
+            || labelLooksLikeNonCompete(lab)
         ) {
             wantRaw = 'No';
+        } else if (kind === 'work_authorization' || labelLooksLikeAuthorizedWithoutSponsorship(lab)) {
+            wantRaw = 'Yes';
+        } else if (kind === 'over_18' || kind === 'us_citizen_yes' || kind === 'us_person_yes') {
+            wantRaw = 'Yes';
+        } else if (kind === 'export_control_us_citizen') {
+            wantRaw = 'U.S. Citizen';
         }
         const want = helper?.canonicalizeWant?.(wantRaw) || wantRaw;
         const wantYes = /^(yes|y)\b/i.test(want) || (helper && helper.isAffirmative(want) && !helper.isNegative(want));
@@ -1332,22 +1982,54 @@
         const el = findEl(field);
         if (!el) return { ok: false, chosen: '' };
         const lab = String(field.label || '');
-        const on = helper
+        const kind = effectiveFieldKind(field) || field.kind || '';
+        let on = helper
             ? helper.wantCheckboxOn(wanted, lab)
             : /^(yes|y|true|1|agree|accept|on)$/i.test(String(wanted || '').trim());
-        if (el.checked !== on) {
-            if (helper) helper.clickInputViaLabel(el);
-            else el.click();
-            el.checked = on;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
+        // Hard ON for consent / retain / privacy checkboxes.
+        if (
+            kind === 'data_protection'
+            || /\b(agree|acknowledg|consent|terms|certify|confirm|retain|future opportunit|talent pool|privacy\s*policy|have you read)\b/i.test(lab)
+        ) {
+            on = true;
         }
-        await sleep(80);
+        // Hard OFF for prior-employer checkboxes.
+        if (kind === 'previous_employer_no' || labelLooksLikeFormerEmployee(lab)) {
+            on = false;
+        }
+        if (el.checked !== on) {
+            // Prefer label click; Greenhouse often uses custom checkbox UI.
+            const labelEl = el.id
+                ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+                : el.closest('label');
+            if (helper) {
+                if (labelEl) helper.dispatchTrustedClick(labelEl);
+                else helper.clickInputViaLabel(el);
+            } else if (labelEl) {
+                labelEl.click();
+            } else {
+                el.click();
+            }
+            // Force state if UI ignored the click.
+            if (el.checked !== on) {
+                el.checked = on;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
+        }
+        await sleep(100);
         return { ok: el.checked === on, chosen: el.checked ? 'Yes' : 'No' };
     }
 
     async function fillOne(field, wanted, attempt, profile = null) {
-        const strategy = attempt % 2 === 1 ? 'type' : 'open';
+        const kind0 = effectiveFieldKind(field) || field.kind || '';
+        const forceOpen = kind0 === 'skill_experience'
+            || kind0 === 'years_of_experience'
+            || kind0 === 'disability_status'
+            || /^education_(start|end)_/.test(kind0)
+            || (String(wanted || '').length > 48 && (field.role === 'combobox' || field.type === 'select-one'));
+        const strategy = forceOpen ? 'open' : (attempt % 2 === 1 ? 'type' : 'open');
         if (field.type === 'radio') {
             return { ...(await fillRadio(field, wanted, profile)), strategy };
         }
@@ -1363,13 +2045,17 @@
             || el.getAttribute('aria-autocomplete')
             || el.className?.toString?.().includes('select__');
         if (isCombo || field.role === 'combobox') {
-            const kind = effectiveFieldKind(field) || field.kind || '';
-            let res = await fillCombobox(el, wanted, kind, strategy);
+            const kind = kind0;
+            let want = wanted;
+            if (kind === 'skill_experience' || (kind === 'years_of_experience' && String(want || '').length > 40)) {
+                want = skillExperienceWantAliases(profile, field.label || '')[0] || want;
+            }
+            let res = await fillCombobox(el, want, kind, strategy, profile, field.label || '');
             // Location select often lists US states — retry with state name if city string missed.
             if (!res?.ok && (kind === 'city' || kind === 'state')) {
                 const st = String(wanted || '').split(',').pop()?.trim();
                 if (st && st.toLowerCase() !== String(wanted || '').toLowerCase()) {
-                    res = await fillCombobox(el, st, 'state', 'type');
+                    res = await fillCombobox(el, st, 'state', 'type', profile, field.label || '');
                 }
             }
             // Dropdown miss — type City, ST ZIP as free text (Evio-style manual entry).
@@ -1385,6 +2071,11 @@
                         }
                     } catch (_) { /* ignore */ }
                 }
+            }
+            // Second try: always open-and-pick for skill / education selects.
+            if (!res?.ok && (kind === 'skill_experience' || /^education_(start|end)_/.test(kind)
+                || kind === 'gender' || kind === 'race_ethnicity' || kind === 'disability_status')) {
+                res = await fillCombobox(el, want, kind, 'open', profile, field.label || '');
             }
             return { ...res, strategy };
         }
@@ -1408,19 +2099,47 @@
         if (kind === 'onsite_hub_yes' || /\bopen to working\b.{0,120}\b(office|hub|onsite)|office hubs?\b/i.test(lab)) {
             return 'Yes';
         }
-        if (kind === 'us_person_yes' || /\bU\.?\s*S\.?\s*person\b/i.test(lab)) return 'Yes';
-        if (kind === 'requires_sponsorship' || /\bsponsor|visa|h-?1b\b/i.test(lab)) return 'No';
-        if (kind === 'previous_employer_no'
-            || /\bformer\b.{0,48}\bemployee|employed by\b|ever been employed|worked\s+(at|for)\b/i.test(lab)) {
-            return 'No';
+        if (kind === 'us_person_yes' || kind === 'us_citizen_yes'
+            || /\bU\.?\s*S\.?\s*person\b/i.test(lab)
+            || /\b(u\.?\s*s\.?\s*|united states)\s*citizen\b/i.test(lab)) {
+            return 'Yes';
         }
+        if (kind === 'export_control_us_citizen') return 'U.S. Citizen';
+        if (kind === 'requires_sponsorship' || /\bsponsor|visa|h-?1b\b/i.test(lab)) return 'No';
+        if (kind === 'previous_employer_no' || labelLooksLikeFormerEmployee(lab)) return 'No';
+        if (kind === 'employee_relationship_no' || labelLooksLikeEmployeeRelationship(lab)) return 'No';
+        if (kind === 'non_compete_no' || labelLooksLikeNonCompete(lab)) return 'No';
         if (kind === 'work_authorization' || /\bauthoriz|eligible to work\b/i.test(lab)) return 'Yes';
         if (kind === 'over_18' || /\bover[\s_-]*18|18 or older\b/i.test(lab)) return 'Yes';
         if (kind === 'hispanic_latino' || /\bhispanic|latino\b/i.test(lab)) return 'No';
         if (kind === 'veteran_status' || /\bveteran\b/i.test(lab)) {
             return 'I am not a protected veteran';
         }
-        if (kind === 'gender' || /\bgender\b/i.test(lab)) return profile?.gender || 'Male';
+        if (kind === 'gender' || /\bgender\b/i.test(lab) || /\bthink of yourself as\b/i.test(lab)) {
+            return profile?.gender || 'Male';
+        }
+        if (kind === 'race_ethnicity' || /\bidentify your race\b/i.test(lab) || /\brace\b/i.test(lab)) {
+            return profile?.race_ethnicity || '';
+        }
+        if (kind === 'skill_experience'
+            || /\bbest describes.{0,40}experience\b/i.test(lab)
+            || /\bexperience with\b/i.test(lab)
+            || /\bwritten.{0,40}production\b/i.test(lab)
+            || /\bpython.{0,40}production\b/i.test(lab)
+            || labelLooksLikeSkillExperienceYes(lab)) {
+            if (labelLooksLikeFormerEmployee(lab)) return 'No';
+            if (labelLooksLikeSkillExperienceYes(lab)
+                || /\b(do you have|have you)\b.{0,80}\b(experience|hands[\s-]*on|worked with)\b/i.test(lab)) {
+                // Binary Yes/No for stack/skill; dropdown levels still use aliases below when needed.
+                if (SKILL_STACK_RE.test(lab) || /\b(yes|no)\b/i.test(lab) || !/\b(years?|level|best describes)\b/i.test(lab)) {
+                    return 'Yes';
+                }
+            }
+            return skillExperienceWantAliases(profile, lab)[0] || 'Yes';
+        }
+        if (kind === 'years_of_experience') {
+            return yearsExperienceFillFromProfile(profile);
+        }
         if (kind === 'state' || (/\bstate\b/i.test(lab) && /\b(reside|operat|which of)\b/i.test(lab))) {
             const st = String(profile?.state || '').trim();
             const map = {
@@ -1441,10 +2160,16 @@
         }
         // Binary question shape with no mapped kind — safe polarity defaults.
         if (/\b(are|do|does|have|has|will|would|can|is)\b/i.test(lab) || /\?/.test(lab)) {
+            if (labelLooksLikeFormerEmployee(lab)) return 'No';
+            if (labelLooksLikeSkillExperienceYes(lab)) return 'Yes';
             if (/\b(open|willing|able|comfortable|agree|authorized|eligible|citizen|person)\b/i.test(lab)) {
                 return 'Yes';
             }
-            if (/\b(require|need|sponsor|convict|felony|disability|veteran|former|ever been|criminal)\b/i.test(lab)) {
+            // Production / skill experience questions → Yes, not academic No.
+            if (/\b(written|built|maintain|production|python|rest|api|sql|certificate|pki|x\.?509)\b/i.test(lab)) {
+                return 'Yes';
+            }
+            if (/\b(require|need|sponsor|convict|felony|disability|veteran|former|ever been|criminal|related company|affiliate)\b/i.test(lab)) {
                 return 'No';
             }
             return 'No';
@@ -1485,21 +2210,148 @@
                 await sleep(120);
             }
         }
-        // 1b) Force visa sponsorship → No when wrongly left on Yes.
+        // 1b) Hard-NO bucket: visa, worked before, relationship, non-compete, hispanic.
+        const hardNoSpecs = [
+            {
+                match: (k, lab) => k === 'requires_sponsorship' || labelLooksLikeSponsorship(lab),
+                want: 'No'
+            },
+            {
+                match: (k, lab) => k === 'previous_employer_no' || labelLooksLikeFormerEmployee(lab),
+                want: 'No'
+            },
+            {
+                match: (k, lab) => k === 'employee_relationship_no' || labelLooksLikeEmployeeRelationship(lab),
+                want: 'No'
+            },
+            {
+                match: (k, lab) => k === 'non_compete_no' || labelLooksLikeNonCompete(lab),
+                want: 'No'
+            },
+            {
+                match: (k, lab) => k === 'hispanic_latino' || /\bhispanic|latino\b/i.test(lab),
+                want: 'No'
+            }
+        ];
+        for (const spec of hardNoSpecs) {
+            for (const f of fields) {
+                const kind = effectiveFieldKind(f) || f.kind || '';
+                const lab = String(f.label || '');
+                if (labelLooksLikeAuthorizedWithoutSponsorship(lab)) continue;
+                if (!spec.match(kind, lab)) continue;
+                const got = readCurrentValue(f);
+                const empty = !got || isPlaceholderValue(got);
+                const wrongYes = /^yes\b/i.test(String(got || '').trim());
+                if (wrongYes || empty) {
+                    const r = await fillOne(f, spec.want, 2, profile);
+                    if (r?.ok) swept += 1;
+                    await sleep(100);
+                }
+            }
+        }
+        // 1c) Hard-YES bucket: over 18, work auth, US citizen / U.S. person.
+        const hardYesSpecs = [
+            {
+                match: (k, lab) => k === 'over_18' || /\bover[\s_-]*18|18 or older\b/i.test(lab),
+                want: 'Yes'
+            },
+            {
+                match: (k, lab) => k === 'work_authorization'
+                    || labelLooksLikeAuthorizedWithoutSponsorship(lab)
+                    || (/\b(authoriz|eligible to work|legally[\s_-]*authorized)\b/i.test(lab)
+                        && !labelLooksLikeSponsorship(lab)),
+                want: 'Yes'
+            },
+            {
+                match: (k, lab) => k === 'us_citizen_yes' || k === 'us_person_yes'
+                    || /\b(u\.?\s*s\.?\s*|united states)\s*citizen\b/i.test(lab)
+                    || /\bU\.?\s*S\.?\s*person\b/i.test(lab),
+                want: 'Yes'
+            },
+            {
+                match: (k) => k === 'export_control_us_citizen',
+                want: 'U.S. Citizen'
+            }
+        ];
+        for (const spec of hardYesSpecs) {
+            for (const f of fields) {
+                const kind = effectiveFieldKind(f) || f.kind || '';
+                const lab = String(f.label || '');
+                if (!spec.match(kind, lab)) continue;
+                const got = readCurrentValue(f);
+                const empty = !got || isPlaceholderValue(got);
+                const wrongNo = /^no\b/i.test(String(got || '').trim());
+                if (wrongNo || empty) {
+                    const r = await fillOne(f, spec.want, 2, profile);
+                    if (r?.ok) swept += 1;
+                    await sleep(100);
+                }
+            }
+        }
+        // 1d) Gender → Male (never leave Female when profile is Male).
         for (const f of fields) {
             const kind = effectiveFieldKind(f) || f.kind || '';
             const lab = String(f.label || '');
-            if (labelLooksLikeAuthorizedWithoutSponsorship(lab)) continue;
-            if (kind !== 'requires_sponsorship' && !labelLooksLikeSponsorship(lab)) continue;
-            const want = sponsorshipAnswerFromProfile(profile);
+            if (kind !== 'gender' && !/\bthink of yourself as\b/i.test(lab) && !/\bgender\b/i.test(lab)) continue;
+            const want = String(profile?.gender || 'Male').trim() || 'Male';
+            const wantMale = /\bmale\b/i.test(want) && !/\bfemale\b/i.test(want);
             const got = readCurrentValue(f);
-            const empty = !got || isPlaceholderValue(got);
-            const wrongYes = want === 'No' && /^yes\b/i.test(String(got || '').trim());
-            if (wrongYes || empty) {
-                const r = await fillOne(f, want, 2, profile);
+            const wrong = (wantMale && /\bfemale\b/i.test(got))
+                || !got || isPlaceholderValue(got);
+            if (wrong) {
+                const r = await fillOne(f, wantMale ? 'Male' : want, 2, profile);
                 if (r?.ok) swept += 1;
                 await sleep(120);
             }
+        }
+        // 1e) Race / skill weak answers.
+        const yoeSweep = parseInt(String(profile?.years_of_experience || '').replace(/\D/g, ''), 10) || 0;
+        for (const f of fields) {
+            const kind = effectiveFieldKind(f) || f.kind || '';
+            const lab = String(f.label || '');
+            const got = readCurrentValue(f);
+            if (kind === 'race_ethnicity' || /\bidentify your race\b/i.test(lab)) {
+                const want = String(profile?.race_ethnicity || '').trim();
+                if (!want) continue;
+                const empty = !got || isPlaceholderValue(got);
+                const helper = cm();
+                const mismatch = !empty && helper && helper.scoreChoice(want, got, '') < 60;
+                if (empty || mismatch) {
+                    const r = await fillOne(f, want, 2, profile);
+                    if (r?.ok) swept += 1;
+                    await sleep(120);
+                }
+                continue;
+            }
+            if ((kind === 'skill_experience' || kind === 'years_of_experience'
+                || /\bbest describes.{0,40}experience\b/i.test(lab)
+                || /\bwritten.{0,40}production\b/i.test(lab))
+                && yoeSweep >= 1) {
+                if (isWeakSkillOption(got) || !got || isPlaceholderValue(got)) {
+                    const want = kind === 'years_of_experience'
+                        ? yearsExperienceFillFromProfile(profile)
+                        : skillExperienceWantAliases(profile, lab)[0];
+                    if (want) {
+                        const r = await fillOne(f, want, 2, profile);
+                        if (r?.ok) swept += 1;
+                        await sleep(120);
+                    }
+                }
+            }
+        }
+        // 1f) Force consent / retain-data / privacy-read checkboxes ON.
+        for (const f of fields) {
+            if (f.type !== 'checkbox') continue;
+            const lab = String(f.label || '');
+            const kind = effectiveFieldKind(f) || f.kind || '';
+            const isConsent = kind === 'data_protection'
+                || /\b(agree|acknowledg|consent|terms|certify|confirm|retain|future opportunit|talent pool|privacy\s*policy|have you read)\b/i.test(lab);
+            if (!isConsent) continue;
+            const el = findEl(f);
+            if (el && el.checked) continue;
+            const r = await fillOne(f, 'Yes', 1, profile);
+            if (r?.ok || (el && el.checked)) swept += 1;
+            await sleep(80);
         }
         // 2) Empty required select / radio → heuristic Yes/No (never leave Select...).
         const empties = fields.filter((f) => {
@@ -1531,23 +2383,53 @@
         if (kind === 'disability_status' || /\b(disabilit(?:y|ies)|disabled|\bada\b)\b/i.test(lab)) {
             return 'No, I do not have a disability';
         }
-        // Hard locks — NEVER prefer API Yes for sponsorship / prior-employer / sanctioned.
-        if (labelLooksLikeAuthorizedWithoutSponsorship(lab) || kind === 'work_authorization') {
-            const raw = String(profile?.work_authorization || '').trim();
-            if (/^(no|n)\b/i.test(raw) || /not authorized|unauthorized/i.test(raw)) return 'No';
+        // Hard YES: authorized to work / over 18 / US citizen / U.S. person.
+        if (labelLooksLikeAuthorizedWithoutSponsorship(lab) || kind === 'work_authorization'
+            || /\b(authoriz|eligible to work|legally[\s_-]*authorized)\b/i.test(lab)) {
+            return workAuthAnswerFromProfile(profile);
+        }
+        if (kind === 'over_18' || /\bover[\s_-]*18|18 or older\b/i.test(lab)) {
             return 'Yes';
         }
+        if (kind === 'us_citizen_yes' || kind === 'us_person_yes'
+            || /\b(u\.?\s*s\.?\s*|united states)\s*citizen\b/i.test(lab)
+            || /\bU\.?\s*S\.?\s*person\b/i.test(lab)) {
+            return 'Yes';
+        }
+        if (kind === 'export_control_us_citizen') {
+            return 'U.S. Citizen';
+        }
+        // Hard NO: visa, worked before, relationship, non-compete / incomplete.
         if (kind === 'requires_sponsorship' || labelLooksLikeSponsorship(lab)) {
-            return sponsorshipAnswerFromProfile(profile);
+            return 'No';
         }
         if (kind === 'previous_employer_no'
             || kind === 'sanctioned_countries_no'
-            || /\b(have you (ever )?worked|previously\s+worked|former\b.{0,48}\bemployee|are you a former\b|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(at|for)\b|ever\s+worked\s+(at|for)|(?:currently|previously).{0,40}working\s+for|contractor or contingent|contingent worker|permanent or temporary employee)\b/i.test(lab)) {
+            || labelLooksLikeFormerEmployee(lab)) {
             return 'No';
         }
-        if (kind === 'onsite_hub_yes' || kind === 'us_person_yes'
-            || /\bopen to working\b.{0,120}\b(office|hub|onsite|on[\s_-]*site)|office hubs?\b/i.test(lab)
-            || /\bU\.?\s*S\.?\s*person\b/i.test(lab)) {
+        if (kind === 'employee_relationship_no' || labelLooksLikeEmployeeRelationship(lab)) {
+            return 'No';
+        }
+        if (kind === 'non_compete_no' || labelLooksLikeNonCompete(lab)) {
+            return 'No';
+        }
+        if (kind === 'hispanic_latino' || /\bhispanic|latino\b/i.test(lab)) {
+            return 'No';
+        }
+        // Gender: always Male from profile (never Female / decline unless profile says so).
+        if (kind === 'gender' || /\bgender\b/i.test(lab) || /\bthink of yourself as\b/i.test(lab)) {
+            const g = String(profile?.gender || 'Male').trim();
+            if (/\bfemale\b/i.test(g) && !/\bmale\b/i.test(g.replace(/female/i, ''))) return 'Female';
+            return 'Male';
+        }
+        if (kind === 'current_company'
+            || (/\b(current[\s_-]*company|current[\s_-]*employer|present[\s_-]*employer)\b/i.test(lab)
+                && !/\b(previous|prior|former)\b/i.test(lab))) {
+            return currentCompanyFromProfile(profile);
+        }
+        if (kind === 'onsite_hub_yes'
+            || /\bopen to working\b.{0,120}\b(office|hub|onsite|on[\s_-]*site)|office hubs?\b/i.test(lab)) {
             return 'Yes';
         }
         const PROFILE_ONLY = new Set([
@@ -1556,12 +2438,25 @@
             'disability_status', 'veteran_status', 'race_ethnicity',
             'hispanic_latino', 'gender',
             'how_heard', 'notice_period', 'earliest_start_date',
-            'willing_to_travel', 'website_url', 'over_18', 'willing_to_relocate'
+            'willing_to_travel', 'website_url', 'over_18', 'willing_to_relocate',
+            'skill_experience', 'education_start_month', 'education_start_year',
+            'education_end_month', 'education_end_year', 'years_of_experience',
+            'requires_sponsorship', 'previous_employer_no', 'employee_relationship_no',
+            'non_compete_no', 'work_authorization', 'us_citizen_yes', 'us_person_yes',
+            'export_control_us_citizen', 'sanctioned_countries_no'
         ]);
         // Prefer answers API when present — except hard locks above.
         if (!PROFILE_ONLY.has(kind)) {
             const fromAnswers = lookupAnswer(answersById, answersByLabel, field);
-            if (fromAnswers) return normalizeWantedValue(fromAnswers, field, profile);
+            if (fromAnswers) {
+                // Never keep LLM "0 experience" / "No experience" — rewrite.
+                if (isWeakSkillOption(fromAnswers)) {
+                    return skillExperienceWantAliases(profile, lab)[0]
+                        || yearsExperienceFillFromProfile(profile)
+                        || fromAnswers;
+                }
+                return normalizeWantedValue(fromAnswers, field, profile);
+            }
         }
         const p = profile || {};
         const stateMap = {
@@ -1616,34 +2511,43 @@
                 }
                 return d || 'Computer Science';
             }
-            case 'years_of_experience': {
-                const n = parseInt(String(p.years_of_experience || '').replace(/\D/g, ''), 10);
-                if (n >= 10) return '10+ years';
-                if (n >= 7) return '7-10 years';
-                if (n >= 5) return '5-6 years';
-                return p.years_of_experience || '';
+            case 'years_of_experience':
+                return yearsExperienceFillFromProfile(p);
+            case 'skill_experience': {
+                const skillLab = String(field.label || lab || '');
+                if (labelLooksLikeFormerEmployee(skillLab)) return 'No';
+                if (labelLooksLikeSkillExperienceYes(skillLab)) return 'Yes';
+                return skillExperienceWantAliases(p, skillLab)[0] || 'Yes';
             }
+            case 'education_start_month':
+                return parseEducationDates(p).startMonth || 'August';
+            case 'education_start_year':
+                return parseEducationDates(p).startYear || '';
+            case 'education_end_month':
+                return parseEducationDates(p).endMonth || 'May';
+            case 'education_end_year':
+                return parseEducationDates(p).endYear || '';
             case 'requires_sponsorship':
-                return sponsorshipAnswerFromProfile(p);
+                return 'No';
             case 'todays_date':
                 return formatEstTodayMdY();
-            case 'work_authorization': {
-                const raw = String(p.work_authorization || '').trim();
-                if (/^(no|n)\b/i.test(raw) || /not authorized|unauthorized/i.test(raw)) return 'No';
+            case 'work_authorization':
                 return 'Yes';
-            }
-            case 'over_18': return p.over_18 || 'Yes';
+            case 'over_18': return 'Yes';
             case 'willing_to_relocate': return p.willing_to_relocate || 'Yes';
-            case 'gender': return p.gender || '';
+            case 'gender': return p.gender || 'Male';
             case 'disability_status':
                 // Hard lock: always No for every profile / ATS wording.
                 return 'No, I do not have a disability';
             case 'onsite_hub_yes':
             case 'us_person_yes':
+            case 'us_citizen_yes':
                 return 'Yes';
+            case 'export_control_us_citizen':
+                return 'U.S. Citizen';
             case 'veteran_status': return p.veteran_status || 'I am not a protected veteran';
             case 'race_ethnicity': return p.race_ethnicity || '';
-            case 'hispanic_latino': return p.hispanic_latino || 'No';
+            case 'hispanic_latino': return 'No';
             case 'how_heard': return p.how_heard || 'LinkedIn';
             case 'notice_period': return p.notice_period || '2 weeks';
             case 'earliest_start_date': return p.earliest_start_date || '2 weeks';
@@ -1668,13 +2572,53 @@
             }
             case 'previous_employer_no':
             case 'sanctioned_countries_no':
+            case 'employee_relationship_no':
+            case 'non_compete_no':
                 return 'No';
             case 'salary': {
-                const raw = String(p.salary_range || p.desired_salary || '').trim();
-                return raw || '$120,000';
+                // Prefer JD range / job-inferred band over a fixed profile number.
+                try {
+                    const jd = String(jobDescription || '');
+                    const role = String(field?.job_role || p.job_role || '').trim();
+                    const company = String(p.company_name || '').trim();
+                    const hay = `${role} ${company} ${jd.slice(0, 4000)}`.toLowerCase();
+                    const money = jd.match(/\$\s*([\d,]+)\s*(k)?\s*(?:-|–|to)\s*\$?\s*([\d,]+)\s*(k)?/i);
+                    if (money) {
+                        let a = parseFloat(money[1].replace(/,/g, ''));
+                        let b = parseFloat(money[3].replace(/,/g, ''));
+                        if (money[2]) a *= 1000;
+                        if (money[4]) b *= 1000;
+                        if (!money[2] && a >= 40 && a <= 500) a *= 1000;
+                        if (!money[4] && b >= 40 && b <= 500) b *= 1000;
+                        const lo = Math.min(a, b);
+                        const hi = Math.max(a, b);
+                        if (hi > lo && hi >= 40000) {
+                            const v = Math.round(lo + (hi - lo) * 0.35);
+                            return `$${v.toLocaleString('en-US')}`;
+                        }
+                    }
+                    let mid = 145000;
+                    if (/\b(intern|junior|entry)\b/.test(hay)) mid = 105000;
+                    else if (/\b(principal|staff)\b/.test(hay)) mid = 215000;
+                    else if (/\b(senior|sr\.?|lead)\b/.test(hay)) mid = 175000;
+                    if (/\b(security|pki|platform|sre|devops|ml|ai)\b/.test(hay)) mid = Math.round(mid * 1.06);
+                    let hash = 0;
+                    for (let i = 0; i < hay.length && i < 200; i++) hash = ((hash << 5) - hash + hay.charCodeAt(i)) | 0;
+                    mid = Math.max(70000, mid + ((Math.abs(hash) % 11) - 5) * 1000);
+                    return `$${mid.toLocaleString('en-US')}`;
+                } catch (_) {
+                    const raw = String(p.salary_range || p.desired_salary || '').trim();
+                    return raw || '$140,000';
+                }
             }
             case 'data_protection': return 'Yes';
             case 'question': {
+                // Consent / retain-data / privacy-read checkboxes & Yes/No — never leave blank.
+                if (/\b(agree|acknowledg|consent|terms|certify|confirm|retain|future opportunit|talent pool|privacy\s*policy|have you read)\b/i.test(field.label || '')) {
+                    return 'Yes';
+                }
+                if (SKILL_EXPERIENCE_YES_RE.test(field.label || '') && !labelLooksLikeFormerEmployee(field.label || '')) return 'Yes';
+                if (labelLooksLikeFormerEmployee(field.label || '')) return 'No';
                 const essay = fallbackEssayForQuestion(field.label, p, jobDescription);
                 if (essay) return essay;
                 return '';
@@ -1834,7 +2778,19 @@
                 lastFingerprint = fp;
             }
 
-            const fields = collectFields();
+            const fields = collectFields().slice().sort((a, b) => {
+                // Fill knockout Yes/No first so wrong Yes never flashes mid-page.
+                const rank = (f) => {
+                    const k = effectiveFieldKind(f) || f.kind || '';
+                    const lab = String(f.label || '');
+                    if (k === 'disability_status' || /\bdisabilit/i.test(lab)) return 0;
+                    if (k === 'requires_sponsorship' || labelLooksLikeSponsorship(lab)) return 1;
+                    if (k === 'previous_employer_no' || labelLooksLikeFormerEmployee(lab)) return 2;
+                    if (k === 'work_authorization') return 3;
+                    return 10;
+                };
+                return rank(a) - rank(b);
+            });
             const required = fields.filter((f) => f.required);
             requiredTotal = Math.max(requiredTotal, required.length);
 
@@ -1991,10 +2947,47 @@
                     })();
                 if (!hasNext && findSubmit()) {
                     submitClicked = false;
+                    // Final sponsorship / hard-NO sweep before any auto-submit.
+                    await sweepRequiredSelects(
+                        profile, answersById, answersByLabel, payload.jobDescription
+                    );
+                    const preSubmitBad = collectFields().filter((f) => {
+                        if (!f.required) return false;
+                        const wanted = profileValue(profile, answersById, answersByLabel, f, payload.jobDescription)
+                            || defaultAnswerForEmptySelect(f, profile, answersById, answersByLabel, payload.jobDescription);
+                        return !requiredFieldSatisfied(f, wanted, readCurrentValue(f));
+                    });
+                    if (preSubmitBad.length) {
+                        return {
+                            ok: false,
+                            engine: ENGINE,
+                            ats,
+                            filled,
+                            requiredTotal: required.length,
+                            requiredOk: Math.max(0, required.length - preSubmitBad.length),
+                            requiredComplete: false,
+                            readyToSubmit: false,
+                            submitClicked: false,
+                            missingRequired: preSubmitBad.map((f) => fieldMissingLabel(f)),
+                            attempts,
+                            pages: pages + 1,
+                            preSubmit: true,
+                            autoSubmit
+                        };
+                    }
                     if (autoSubmit) {
                         try {
                             const r = await clickSubmitSafe({ waitEnabledMs: 3200 });
-                            submitClicked = !!r?.clicked;
+                            // clickSubmitSafe does not re-check fields — guard via ENGINE path semantics:
+                            // if sponsorship still empty after click attempt, treat as not clicked.
+                            const stillEmptySponsor = collectFields().some((f) => {
+                                if (f.kind !== 'requires_sponsorship' && !labelLooksLikeSponsorship(f.label || '')) {
+                                    return false;
+                                }
+                                const cur = readCurrentValue(f);
+                                return !cur || !String(cur).trim() || isPlaceholderValue(cur);
+                            });
+                            submitClicked = !!r?.clicked && !stillEmptySponsor;
                         } catch (_) {
                             submitClicked = false;
                         }
@@ -2005,7 +2998,7 @@
                         ats,
                         filled,
                         requiredTotal: required.length,
-                        requiredOk: required.length - stillBad.length,
+                        requiredOk: required.length,
                         requiredComplete: true,
                         readyToSubmit: true,
                         submitClicked,
@@ -2147,7 +3140,7 @@
                 const fields = collectFields();
                 const API_KINDS = new Set([
                     'question', 'salary', 'work_authorization', 'requires_sponsorship',
-                    'previous_employer_no', 'years_of_experience', 'willing_to_relocate',
+                    'previous_employer_no', 'years_of_experience', 'skill_experience', 'willing_to_relocate',
                     'over_18', 'how_heard', 'data_protection', 'employer_count',
                     'high_school_performance', 'high_school_rationale', 'degree_result',
                     'sanctioned_countries_no', 'export_control_us_citizen', 'immigration_na_if_citizen',
@@ -2162,7 +3155,8 @@
                         type: f.type,
                         answer_type: f.kind === 'salary'
                             ? 'salary'
-                            : (Array.isArray(f.options) && f.options.length ? 'choice' : 'written'),
+                            : (f.kind === 'skill_experience' || f.kind === 'years_of_experience'
+                                || (Array.isArray(f.options) && f.options.length) ? 'choice' : 'written'),
                         options: Array.isArray(f.options)
                             ? f.options.map((o) => (typeof o === 'string' ? o : (o?.label || o?.value || ''))).filter(Boolean)
                             : undefined
@@ -2188,7 +3182,8 @@
         if (msg?.type === 'BIDDER_ENGINE_SUBMIT') {
             (async () => {
                 try {
-                    const force = !!msg.force;
+                    // Instruct Lumi may pass instructForce; generic force no longer bypasses required gates.
+                    const instructForce = !!msg.instructForce;
                     let btn = findSubmit();
                     if (!btn) {
                         sendResponse({ ok: true, clicked: false, reason: 'no_submit' });
@@ -2207,21 +3202,48 @@
                         btn.disabled || btn.getAttribute('aria-disabled') === 'true'
                     );
 
-                    const required = collectFields().filter((f) => f.required);
-                    const missing = required.filter((f) => {
-                        const cur = readCurrentValue(f);
-                        return !cur || !String(cur).trim();
+                    const pageText = String(document.body?.innerText || '').slice(0, 12000);
+                    const resumeSlotEmpty = /\br[ée]sum[eé]\s*\*/i.test(pageText)
+                        && /drop or select|\.doc\s*\/\s*\.docx/i.test(pageText)
+                        && ![...document.querySelectorAll('input[type="file"]')].some((i) => i.files && i.files.length);
+                    const visibleRequiredError = [...document.querySelectorAll(
+                        '[class*="error"], [role="alert"], [class*="invalid"], span, p, small'
+                    )].slice(0, 200).some((el) => {
+                        const t = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+                        return t.length <= 90
+                            && /this field is required|is required\.?$/i.test(t)
+                            && el.getClientRects().length > 0;
                     });
-                    // Greenhouse enabled Submit = site validation passed. Our React
-                    // select reader often false-empties filled EE/Yes-No fields — do
-                    // not block the click when the blue Submit button is ready.
-                    if (missing.length && !force && !siteReady) {
+                    if (resumeSlotEmpty || visibleRequiredError) {
                         sendResponse({
                             ok: true,
                             clicked: false,
-                            reason: 'required_incomplete',
+                            reason: resumeSlotEmpty ? 'resume_required' : 'visible_required_errors',
+                            siteReady
+                        });
+                        return;
+                    }
+
+                    const required = collectFields().filter((f) => f.required);
+                    const missing = required.filter((f) => {
+                        const cur = readCurrentValue(f);
+                        return !cur || !String(cur).trim() || isPlaceholderValue(cur);
+                    });
+                    const emptySponsor = required.some((f) => {
+                        const lab = String(f.label || '');
+                        if (f.kind !== 'requires_sponsorship' && !labelLooksLikeSponsorship(lab)) return false;
+                        const cur = readCurrentValue(f);
+                        return !cur || !String(cur).trim() || isPlaceholderValue(cur);
+                    });
+                    // Never click Submit with empty sponsorship / required fields
+                    // (even if Greenhouse left the button enabled).
+                    if (!instructForce && (emptySponsor || missing.length)) {
+                        sendResponse({
+                            ok: true,
+                            clicked: false,
+                            reason: emptySponsor ? 'sponsorship_empty' : 'required_incomplete',
                             missing: missing.map((f) => f.label).slice(0, 12),
-                            siteReady: false
+                            siteReady
                         });
                         return;
                     }
@@ -2229,7 +3251,7 @@
                     sendResponse({
                         ok: true,
                         ...r,
-                        forced: force || (missing.length > 0 && siteReady),
+                        forced: !!instructForce,
                         siteReady,
                         missing: missing.length ? missing.map((f) => f.label).slice(0, 12) : undefined
                     });

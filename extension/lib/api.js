@@ -168,6 +168,31 @@ export async function generateResume({
     });
 }
 
+/** Regenerate CV for an existing pending application (updates same row). */
+export async function regenerateResume({
+    applicationId,
+    jobDescription,
+    companyName,
+    jobRole,
+    jobUrl,
+    coreSkills,
+    fontFamily = '__random__'
+}) {
+    return request('/user/regenerate-resume', {
+        method: 'POST',
+        body: {
+            application_id: applicationId,
+            job_description: jobDescription || '',
+            company_name: companyName || '',
+            job_role: jobRole || '',
+            job_url: jobUrl || '',
+            core_skills: Array.isArray(coreSkills) ? coreSkills.join(', ') : (coreSkills || ''),
+            font_family: fontFamily
+        },
+        timeout: 120000
+    });
+}
+
 /** Autofill / Mode-2 answers (not Bidder brain). */
 export async function generateAnswers({
     profile_id,
@@ -316,6 +341,19 @@ export async function getBidderStatus() {
     return request('/user/bidder/status');
 }
 
+export async function markJobLinkExpired(jobLinkId, extra = {}) {
+    const id = Number(jobLinkId);
+    if (!Number.isFinite(id) || id <= 0) return { ok: false, error: 'invalid_job_link_id' };
+    return request(`/job-links/${id}/expired`, {
+        method: 'POST',
+        body: {
+            reason: extra.reason || 'expired',
+            snippet: extra.snippet || null,
+            url: extra.url || null
+        }
+    });
+}
+
 export async function markApplicationApplied(applicationId) {
     return request(`/user/applications/${applicationId}`, {
         method: 'PATCH',
@@ -355,7 +393,51 @@ export async function logBidCourseFill(payload) {
     });
 }
 
-export async function fetchResumeBase64(apiBaseUrl, filename, token) {
+export function buildUploadResumeFilename(profileOrNames, ext = '.docx') {
+    const firstRaw = profileOrNames?.first_name ?? profileOrNames?.firstName ?? profileOrNames?.first ?? '';
+    const lastRaw = profileOrNames?.last_name ?? profileOrNames?.lastName ?? profileOrNames?.last ?? '';
+    const sanitize = (name, maxLen = 40) => {
+        let s = String(name || '').replace(/[^A-Za-z0-9]+/g, '_');
+        s = s.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        if (!s) return '';
+        if (s.length > maxLen) s = s.substring(0, maxLen).replace(/_+$/g, '');
+        return s;
+    };
+    const first = sanitize(firstRaw) || 'Candidate';
+    const last = sanitize(lastRaw);
+    const base = last ? `${first}_${last}` : first;
+    const safeExt = String(ext || '.docx').startsWith('.') ? String(ext) : `.${ext}`;
+    return `${base}${safeExt}`;
+}
+
+/** Derive First_Last.docx from archive resume_First_Last_Company_ts.docx when needed. */
+export function cleanResumeUploadName(filename, profile = null) {
+    if (profile?.first_name || profile?.last_name) {
+        const fromProfile = buildUploadResumeFilename(profile);
+        if (fromProfile && !/^resume_/i.test(fromProfile)) return fromProfile;
+    }
+    const fn = String(filename || '').trim();
+    if (!fn) return 'Candidate.docx';
+    if (!/^resume_/i.test(fn) && !/_\d{10,}\./.test(fn)) {
+        // Already looks clean enough — keep basename
+        const base = fn.split(/[/\\]/).pop() || fn;
+        if (/^[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z][A-Za-z0-9]*){0,2}\.(docx?|pdf)$/i.test(base)) {
+            return base;
+        }
+    }
+    // Tolerate spaces in archive tokens: resume_Vinh_ Ly_Company_ts.docx
+    const m = fn.match(/^resume_([^_]+)_([^_]+)_/i);
+    if (m) {
+        return buildUploadResumeFilename({
+            first_name: String(m[1] || '').trim(),
+            last_name: String(m[2] || '').trim()
+        });
+    }
+    const ext = (fn.match(/\.(docx?|pdf)$/i) || ['.docx'])[0];
+    return `Candidate${ext.startsWith('.') ? ext : `.${ext}`}`;
+}
+
+export async function fetchResumeBase64(apiBaseUrl, filename, token, opts = {}) {
     const settings = await getSettings();
     const base = normalizeBaseUrl(apiBaseUrl || settings.apiBaseUrl);
     const auth = token ?? settings.token;
@@ -367,11 +449,23 @@ export async function fetchResumeBase64(apiBaseUrl, filename, token) {
     const bytes = new Uint8Array(buf);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const uploadName = cleanResumeUploadName(
+        opts.uploadFilename && !/^resume_/i.test(String(opts.uploadFilename))
+            ? opts.uploadFilename
+            : filename,
+        opts.profile || null
+    );
+    // Never attach archive names to ATS — always First_Last.docx.
+    const safeUpload = (!uploadName || /^resume_/i.test(uploadName) || /_\d{10,}\./.test(uploadName))
+        ? (opts.profile ? buildUploadResumeFilename(opts.profile) : cleanResumeUploadName(filename, opts.profile || null))
+        : uploadName;
     return {
         base64: btoa(binary),
         mimeType: res.headers.get('content-type')
             || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        filename
+        // Archive path may still be resume_…_ts.docx on disk; ATS sees upload name.
+        filename: safeUpload || 'Candidate.docx',
+        archiveFilename: filename
     };
 }
 

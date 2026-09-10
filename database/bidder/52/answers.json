@@ -1,0 +1,40 @@
+[
+  {
+    "id": "keyword-filter",
+    "label": "keyword-filter",
+    "answer": "Data privacy; SaaS; solutions engineering; pre-sales; compliance.",
+    "answer_type": "written",
+    "source": "api",
+    "match_source": "llm",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "department-filter",
+    "label": "Department",
+    "answer": "Solutions Engineering",
+    "answer_type": "written",
+    "source": "api",
+    "match_source": "llm",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "office-filter",
+    "label": "Office",
+    "answer": "West",
+    "answer_type": "written",
+    "source": "api",
+    "match_source": "llm",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Round Rock, TX, 78664",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

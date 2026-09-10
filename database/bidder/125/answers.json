@@ -1,0 +1,54 @@
+[
+  {
+    "id": "question_35951031002",
+    "label": "Are you authorized to work lawfully in the United States for any employer?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "question_35951032002",
+    "label": "Do you now or will you in the future require visa sponsorship for work authorization?*",
+    "answer": "Yes",
+    "source": "profile",
+    "match_source": "profile",
+    "answer_type": "fixed",
+    "lane": "profile",
+    "kind": "work_authorization",
+    "knockout": true
+  },
+  {
+    "id": "disability_status",
+    "label": "Disability Status",
+    "answer": "No, I do not have a disability",
+    "source": "hard_lock",
+    "match_source": "hard_lock",
+    "answer_type": "fixed",
+    "lane": "policy",
+    "kind": "disability_status",
+    "knockout": true,
+    "failure_code": "knockout_lock"
+  },
+  {
+    "id": "question_35951033002",
+    "label": "Do you have any friends or relatives currently employed at ZoomInfo?*",
+    "answer": "No",
+    "answer_type": "written",
+    "source": "groq_new_type",
+    "match_source": "llm_groq_new_type",
+    "new_type": true,
+    "lane": "written"
+  },
+  {
+    "id": "Location (city)",
+    "label": "Location (city)",
+    "answer": "Round Rock, TX, 78664",
+    "answer_type": "written",
+    "source": "fill_lesson_early",
+    "match_source": "fill_lesson_early"
+  }
+]

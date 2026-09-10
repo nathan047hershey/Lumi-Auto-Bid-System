@@ -7,10 +7,13 @@ import { Link } from 'react-router-dom';
 import { Loader2, Save, Zap } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     loadLumiBidderPrefs,
     persistLumiBidderPrefs,
     saveLumiBidderPrefs,
+    clampHumanAssistWaitSec,
     HANDS_FREE_LUMI_PREFS,
     FREE_HELPERS_LUMI_PREFS
 } from '@/lib/lumiBidderPrefs';
@@ -207,6 +210,31 @@ export default function LumiBidderSettings({
                     : null}
                 {row('lumi-cover', prefs.uploadCoverLetter, (v) => patch({ uploadCoverLetter: v }), 'Upload cover letter')}
                 {row('lumi-sound', prefs.soundEnabled, (v) => patch({ soundEnabled: v }), 'Alert sound')}
+                <div className={`space-y-1 ${compact ? 'pt-1' : 'pt-1.5'}`}>
+                    <Label
+                        htmlFor="lumi-human-wait"
+                        className={compact ? 'text-[11px] text-muted-foreground' : 'text-xs text-muted-foreground'}
+                    >
+                        Human help wait (seconds)
+                    </Label>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                            id="lumi-human-wait"
+                            type="number"
+                            min={0}
+                            max={600}
+                            step={15}
+                            value={clampHumanAssistWaitSec(prefs.humanAssistWaitSec)}
+                            onChange={(e) => patch({
+                                humanAssistWaitSec: clampHumanAssistWaitSec(e.target.value)
+                            })}
+                            className={compact ? 'h-7 w-24 text-[11px]' : 'h-8 w-28 text-sm'}
+                        />
+                        <span className={compact ? 'text-[10px] text-muted-foreground' : 'text-xs text-muted-foreground'}>
+                            Notify → wait → if no Resume, skip (0 = skip immediately)
+                        </span>
+                    </div>
+                </div>
             </div>
 
             <div className={`space-y-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/5 ${compact ? 'px-2.5 py-2' : 'px-3 py-2.5'}`}>

@@ -19,6 +19,131 @@ const FAMOUS = [
     'Shopify', 'Salesforce', 'Oracle', 'IBM', 'Intel', 'NVIDIA', 'OpenAI', 'Anthropic'
 ];
 
+function normalizeAnswerLabel(s) {
+    return String(s || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/\*\s*$/g, '')
+        .trim();
+}
+
+/** Load saved answers from artifact file and/or bid_courses.answers_json. */
+function loadSavedAnswersForApplication(applicationId) {
+    const appId = parseInt(applicationId, 10);
+    if (!Number.isInteger(appId) || appId <= 0) return [];
+    const out = [];
+    const seen = new Set();
+    const pushAll = (list) => {
+        for (const a of list || []) {
+            if (!a) continue;
+            const ans = String(a.answer || a.value || '').trim();
+            if (!ans) continue;
+            const key = `${a.id || ''}::${normalizeAnswerLabel(a.label)}::${ans.slice(0, 80)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(a);
+        }
+    };
+    try {
+        const artifacts = require('./bidderArtifactService');
+        pushAll(artifacts.readAnswers(appId));
+    } catch (_) { /* ignore */ }
+    try {
+        const { getCourseByApplicationId } = require('./bidCourseService');
+        const course = getCourseByApplicationId(appId);
+        pushAll(course?.answers);
+    } catch (_) { /* ignore */ }
+    return out;
+}
+
+/**
+ * Match saved answers onto the current form questions (by id, then label).
+ * Returns { reused, missing }.
+ */
+function mapSavedAnswersToQuestions(savedList, questions) {
+    const byId = new Map();
+    const byLabel = new Map();
+    for (const a of savedList || []) {
+        if (!a) continue;
+        const ans = String(a.answer || a.value || '').trim();
+        if (!ans) continue;
+        if (a.id != null && a.id !== '') byId.set(String(a.id), a);
+        const lab = normalizeAnswerLabel(a.label);
+        if (lab) byLabel.set(lab, a);
+    }
+    const reused = [];
+    const missing = [];
+    for (const q of questions || []) {
+        const hit = (q?.id != null && byId.get(String(q.id)))
+            || byLabel.get(normalizeAnswerLabel(q?.label));
+        const text = hit ? String(hit.answer || hit.value || '').trim() : '';
+        if (text) {
+            reused.push({
+                id: q.id,
+                label: q.label,
+                answer: text,
+                answer_type: hit.answer_type || q.answer_type || 'written',
+                source: 'cached',
+                match_source: 'saved_answers_reuse',
+                kind: q.kind || hit.kind,
+                lane: hit.lane,
+                knockout: hit.knockout,
+                options: q.options?.length ? q.options : hit.options
+            });
+        } else {
+            missing.push(q);
+        }
+    }
+    return { reused, missing };
+}
+
+function persistBidderAnswers(applicationId, answers, {
+    profileId,
+    userId,
+    companyName,
+    jobRole,
+    answersProvider,
+    answersModel
+} = {}) {
+    const appId = parseInt(applicationId, 10);
+    if (!Number.isInteger(appId) || appId <= 0 || !Array.isArray(answers) || !answers.length) {
+        return false;
+    }
+    try {
+        const artifacts = require('./bidderArtifactService');
+        artifacts.saveCoursePackage(appId, {
+            answers,
+            meta: {
+                saved_at: new Date().toISOString(),
+                reason: 'bidder_answers_ready',
+                count: answers.length,
+                provider: answersProvider || null,
+                model: answersModel || null
+            }
+        });
+    } catch (err) {
+        console.warn('[bidder] artifact answers save failed:', err?.message || err);
+    }
+    try {
+        const { upsertCourse, getCourseByApplicationId } = require('./bidCourseService');
+        const existing = getCourseByApplicationId(appId);
+        upsertCourse({
+            applicationId: appId,
+            profileId: profileId || existing?.profile_id,
+            userId: userId || existing?.user_id,
+            companyName: companyName || existing?.company_name,
+            jobRole: jobRole || existing?.job_role,
+            answers,
+            answersProvider: answersProvider || existing?.answers_provider || null,
+            answersModel: answersModel || existing?.answers_model || null,
+            skipEvent: true
+        });
+    } catch (err) {
+        console.warn('[bidder] course answers save failed:', err?.message || err);
+    }
+    return true;
+}
+
 function ensureFieldAttemptTable() {
     try {
         runQuery(`
@@ -157,8 +282,11 @@ function buildBidderPromptExtras({
 
     const lines = [
         '=== BIDDER ENGINE RULES (human form answers) ===',
-        '- Write SHORT answers (1–3 sentences / ~35–70 words for "why" questions). Not essays.',
+        '- Write the SHORTEST clear answers (1 sentence preferred; 2 max / ~18–40 words for "why" questions). Hard cap 50 words. Not essays.',
         '- Sound like a person filling a form, not an AI cover letter.',
+        '- Plain text only: no markdown, bold, italics, bullets, or long dashes (— –).',
+        '- Unique to THIS profile + THIS CV + THIS JD. Never reuse another profile\'s wording.',
+        '- Base every claim on the generated resume / work history; aim wording at the JD.',
         '- Mirror JD keywords naturally when true for the candidate.',
         `- JD keyword hints: ${keywords.join(', ') || '(none)'}`,
         '- NEVER invent employers, schools, or metrics not supported by the resume/profile.',
@@ -225,8 +353,45 @@ async function generateBidderAnswers(opts = {}) {
         questions,
         companyName,
         jobRole,
-        userId
+        userId,
+        applicationId = null,
+        forceRegenerate = false
     } = opts;
+
+    const questionList = Array.isArray(questions) ? questions : [];
+    const appId = applicationId != null ? parseInt(applicationId, 10) : 0;
+
+    // Reuse saved answers on rebid after skip — avoid another LLM bill.
+    let reused = [];
+    let missingQs = questionList;
+    if (!forceRegenerate && Number.isInteger(appId) && appId > 0 && questionList.length) {
+        const mapped = mapSavedAnswersToQuestions(loadSavedAnswersForApplication(appId), questionList);
+        reused = mapped.reused;
+        missingQs = mapped.missing;
+        // Full hit → return immediately (no API).
+        if (reused.length && missingQs.length === 0) {
+            return {
+                answers: reused,
+                skipped: [],
+                provider: 'cache',
+                model: 'saved_answers',
+                written_count: questionList.length,
+                written_filled: reused.length,
+                studying: false,
+                memory_hits: 0,
+                reused: true,
+                reused_count: reused.length,
+                generated_count: 0,
+                engine_version: ENGINE_VERSION,
+                bidder_meta: {
+                    keywords: [],
+                    few_shot_count: 0,
+                    allowed_employers: [],
+                    answers_reused: true
+                }
+            };
+        }
+    }
 
     const extras = buildBidderPromptExtras({
         userId,
@@ -238,11 +403,12 @@ async function generateBidderAnswers(opts = {}) {
         workExperience: profile?.work_experience
     });
 
+    const toGenerate = missingQs.length ? missingQs : questionList;
     const result = await generateApplicationAnswers({
         profile,
         jobDescription,
         resumeHtml,
-        questions,
+        questions: toGenerate,
         companyName,
         jobRole,
         userId,
@@ -250,41 +416,162 @@ async function generateBidderAnswers(opts = {}) {
         promptExtras: extras.extrasBlock
     });
 
-    const hardened = hardenAnswers(result.answers, extras.allowedEmployers);
-    return {
+    const hardenedNew = hardenAnswers(result.answers, extras.allowedEmployers);
+    const byKey = new Map();
+    for (const a of reused) {
+        const k = a?.id != null && a.id !== ''
+            ? `id:${a.id}`
+            : `lab:${normalizeAnswerLabel(a.label)}`;
+        byKey.set(k, a);
+    }
+    for (const a of hardenedNew) {
+        const k = a?.id != null && a.id !== ''
+            ? `id:${a.id}`
+            : `lab:${normalizeAnswerLabel(a.label)}`;
+        byKey.set(k, a); // fresh LLM wins over cache for that question
+    }
+    const merged = [];
+    const used = new Set();
+    for (const q of questionList) {
+        const k = q?.id != null && q.id !== ''
+            ? `id:${q.id}`
+            : `lab:${normalizeAnswerLabel(q.label)}`;
+        const hit = byKey.get(k);
+        if (hit) {
+            merged.push(hit);
+            used.add(k);
+        }
+    }
+    for (const [k, a] of byKey) {
+        if (!used.has(k)) merged.push(a);
+    }
+
+    const out = {
         ...result,
-        answers: hardened,
+        answers: merged,
+        reused: reused.length > 0,
+        reused_count: reused.length,
+        generated_count: hardenedNew.length,
         engine_version: ENGINE_VERSION,
         bidder_meta: {
             keywords: extras.keywords,
             few_shot_count: extras.fewShotCount,
-            allowed_employers: extras.allowedEmployers
+            allowed_employers: extras.allowedEmployers,
+            answers_reused: reused.length > 0,
+            reused_count: reused.length,
+            generated_count: hardenedNew.length
         }
     };
+
+    // Persist as soon as answers exist so skip/rebid can reuse without regenerating.
+    if (Number.isInteger(appId) && appId > 0 && merged.length) {
+        persistBidderAnswers(appId, merged, {
+            profileId: profile?.id,
+            userId,
+            companyName,
+            jobRole,
+            answersProvider: out.provider,
+            answersModel: out.model
+        });
+    }
+
+    return out;
 }
 
 /**
- * Lightweight CV quality gate for Bidder. Returns { ok, reasons, shouldRegenerate }.
+ * CV quality gate for Bidder — file presence, clean upload name, content quality.
+ * Returns { ok, reasons, shouldRegenerate, quality, critical_count, ... }.
  */
-function assessCvQuality({ draftHtml, jobDescription, resumeFilename } = {}) {
+function assessCvQuality({
+    draftHtml,
+    jobDescription,
+    resumeFilename,
+    uploadFilename,
+    profile
+} = {}) {
     const reasons = [];
     const html = String(draftHtml || '');
     const jd = String(jobDescription || '');
-    if (!resumeFilename) reasons.push('missing_resume_file');
+    const archiveName = String(resumeFilename || '').trim();
+    const uploadName = String(uploadFilename || '').trim();
+
+    if (!archiveName) reasons.push('missing_resume_file');
+
+    // Messy archive names must not be what ATS sees; upload name must be First_Last.ext
+    const nameToJudge = uploadName || archiveName;
+    if (nameToJudge) {
+        if (/^resume_/i.test(nameToJudge) || /_\d{10,}\./.test(nameToJudge)) {
+            reasons.push('dirty_resume_filename');
+        } else if (!/^[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z][A-Za-z0-9]*){0,2}\.(docx?|pdf)$/i.test(nameToJudge)
+            && /^resume_/i.test(archiveName)) {
+            // Archive is messy and no clean upload name provided
+            reasons.push('dirty_resume_filename');
+        }
+    }
+
     if (html.trim().length < 400) reasons.push('draft_too_short');
+
+    let quality = null;
+    try {
+        const { buildResumeQualityReport } = require('./resumeQualityReportService');
+        quality = buildResumeQualityReport(html, {
+            profile: profile || {},
+            jobDescription: jd
+        });
+        if (quality && quality.pass === false && (quality.critical_count || 0) > 0) {
+            reasons.push('quality_critical');
+        }
+        if (quality && Number(quality.score || 0) < 70) {
+            reasons.push('quality_score_low');
+        }
+    } catch (err) {
+        console.warn('[bidder] quality report skipped:', err.message);
+    }
+
     const kws = jdKeywords(jd, 8);
     const hit = kws.filter((k) => html.toLowerCase().includes(k)).length;
     if (kws.length >= 4 && hit < Math.ceil(kws.length * 0.25)) {
         reasons.push('low_jd_keyword_overlap');
     }
-    // Hallucination sniff: famous employers in CV text — soft warn only
-    const ok = reasons.length === 0;
+
+    // Hard blockers for submit (soft keyword overlap alone does not block).
+    const hardReasons = reasons.filter((r) => (
+        r === 'missing_resume_file'
+        || r === 'dirty_resume_filename'
+        || r === 'draft_too_short'
+        || r === 'quality_critical'
+        || r === 'quality_score_low'
+    ));
+    const ok = hardReasons.length === 0;
     return {
         ok,
-        shouldRegenerate: !ok,
+        shouldRegenerate: reasons.includes('missing_resume_file')
+            || reasons.includes('draft_too_short')
+            || reasons.includes('quality_critical')
+            || reasons.includes('quality_score_low')
+            || reasons.includes('low_jd_keyword_overlap'),
+        blockSubmit: !ok,
         reasons,
+        hard_reasons: hardReasons,
         keyword_hits: hit,
         keyword_total: kws.length,
+        quality: quality
+            ? {
+                pass: quality.pass,
+                score: quality.score,
+                grade: quality.grade,
+                critical_count: quality.critical_count,
+                warn_count: quality.warn_count,
+                summary: quality.summary,
+                issues: (quality.issues || []).slice(0, 8).map((i) => ({
+                    id: i.id,
+                    severity: i.severity,
+                    message: i.message
+                }))
+            }
+            : null,
+        resume_filename: archiveName || null,
+        upload_filename: uploadName || null,
         engine_version: ENGINE_VERSION
     };
 }
@@ -464,6 +751,9 @@ module.exports = {
     ensureFieldAttemptTable,
     ensureFillLessonTable,
     generateBidderAnswers,
+    loadSavedAnswersForApplication,
+    mapSavedAnswersToQuestions,
+    persistBidderAnswers,
     assessCvQuality,
     logFieldAttempt,
     listFieldAttempts,

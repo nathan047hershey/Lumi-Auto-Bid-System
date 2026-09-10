@@ -234,7 +234,9 @@ function upsertCourse({
                 jobUrl || null,
                 effectiveCompany,
                 jobRole || null,
-                startedAt || new Date().toISOString(),
+                startedAt || (/^queue_started$/i.test(String(eventType || ''))
+                    ? new Date().toISOString()
+                    : null),
                 filledAt || null,
                 appliedAt || null,
                 templateId != null ? parseInt(templateId, 10) : null,
@@ -283,7 +285,11 @@ function upsertCourse({
         setIf('salary_formatted', salaryFormatted !== undefined ? (salaryFormatted || null) : undefined);
         setIf('fill_stats_json', fillStats !== undefined ? jsonString(fillStats) : undefined);
         setIf('answers_json', answers !== undefined ? jsonString(answers) : undefined);
-        setIf('started_at', startedAt !== undefined ? (startedAt || null) : undefined);
+        if (/^queue_started$/i.test(String(eventType || ''))) {
+            sets.push('started_at = CURRENT_TIMESTAMP');
+        } else {
+            setIf('started_at', startedAt !== undefined ? (startedAt || null) : undefined);
+        }
         setIf('filled_at', filledAt !== undefined ? (filledAt || null) : undefined);
         setIf('applied_at', appliedAt !== undefined ? (appliedAt || null) : undefined);
 
@@ -342,9 +348,14 @@ function decorateCourse(row) {
         const resolved = resolveCompanyForCourse(rest);
         if (resolved) company_name = resolved;
     }
+    const profileName = [rest.profile_first_name, rest.profile_last_name]
+        .map((s) => String(s || '').trim())
+        .filter(Boolean)
+        .join(' ');
     return {
         ...rest,
         company_name,
+        profile_name: profileName || null,
         fill_stats: parseJson(row.fill_stats_json, null),
         answers: parseJson(row.answers_json, []),
         last_event_meta: parseJson(last_event_meta_json, null)
@@ -365,23 +376,45 @@ function getCourseByApplicationId(applicationId) {
     return decorateCourse(row);
 }
 
-function listCoursesForUser(userId, { profileId, limit = 50 } = {}) {
+function listCoursesForUser(userId, { profileId, limit = 50, q, from, to } = {}) {
     const params = [parseInt(userId, 10)];
-    let profileClause = '';
+    const clauses = ['c.user_id = ?'];
     if (profileId) {
-        profileClause = ' AND c.profile_id = ? ';
+        clauses.push('c.profile_id = ?');
         params.push(parseInt(profileId, 10));
+    }
+    if (from) {
+        clauses.push('COALESCE(c.filled_at, c.started_at, c.created_at) >= ?');
+        params.push(String(from).trim());
+    }
+    if (to) {
+        clauses.push('COALESCE(c.filled_at, c.started_at, c.created_at) <= ?');
+        params.push(String(to).trim().length <= 10
+            ? `${String(to).trim()} 23:59:59`
+            : String(to).trim());
+    }
+    if (q && String(q).trim()) {
+        const like = `%${String(q).trim().toLowerCase()}%`;
+        clauses.push(`(
+            LOWER(COALESCE(c.company_name,'')) LIKE ?
+            OR LOWER(COALESCE(c.job_role,'')) LIKE ?
+            OR LOWER(COALESCE(c.job_url,'')) LIKE ?
+            OR CAST(c.id AS TEXT) LIKE ?
+        )`);
+        params.push(like, like, like, like);
     }
     params.push(Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200));
     const rows = getAll(
         `SELECT c.*,
             a.job_link_id AS job_link_id,
+            p.first_name AS profile_first_name,
+            p.last_name AS profile_last_name,
             ${LAST_STATUS_EVENT_SQL} AS last_event_type,
             ${LAST_STATUS_META_SQL} AS last_event_meta_json
          FROM bid_courses c
          LEFT JOIN job_applications a ON a.id = c.application_id
-         WHERE c.user_id = ?
-         ${profileClause}
+         LEFT JOIN candidate_profiles p ON p.id = c.profile_id
+         WHERE ${clauses.join(' AND ')}
          ORDER BY COALESCE(c.filled_at, c.started_at, c.created_at) DESC
          LIMIT ?`,
         params
@@ -389,25 +422,50 @@ function listCoursesForUser(userId, { profileId, limit = 50 } = {}) {
     return rows.map(decorateCourse);
 }
 
-function listCoursesAll({ profileId, limit = 100 } = {}) {
+function listCoursesAll({ profileId, limit = 100, q, from, to } = {}) {
     const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 300);
     const params = [];
-    let profileClause = '';
+    const clauses = [];
     if (profileId) {
-        profileClause = ' WHERE c.profile_id = ? ';
+        clauses.push('c.profile_id = ?');
         params.push(parseInt(profileId, 10));
     }
+    if (from) {
+        clauses.push('COALESCE(c.filled_at, c.started_at, c.created_at) >= ?');
+        params.push(String(from).trim());
+    }
+    if (to) {
+        clauses.push('COALESCE(c.filled_at, c.started_at, c.created_at) <= ?');
+        params.push(String(to).trim().length <= 10
+            ? `${String(to).trim()} 23:59:59`
+            : String(to).trim());
+    }
+    if (q && String(q).trim()) {
+        const like = `%${String(q).trim().toLowerCase()}%`;
+        clauses.push(`(
+            LOWER(COALESCE(c.company_name,'')) LIKE ?
+            OR LOWER(COALESCE(c.job_role,'')) LIKE ?
+            OR LOWER(COALESCE(c.job_url,'')) LIKE ?
+            OR LOWER(COALESCE(u.username,'')) LIKE ?
+            OR CAST(c.id AS TEXT) LIKE ?
+        )`);
+        params.push(like, like, like, like, like);
+    }
     params.push(lim);
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = getAll(
         `SELECT c.*,
             a.job_link_id AS job_link_id,
+            p.first_name AS profile_first_name,
+            p.last_name AS profile_last_name,
             ${LAST_STATUS_EVENT_SQL} AS last_event_type,
             ${LAST_STATUS_META_SQL} AS last_event_meta_json,
             u.username AS user_username
          FROM bid_courses c
          LEFT JOIN job_applications a ON a.id = c.application_id
+         LEFT JOIN candidate_profiles p ON p.id = c.profile_id
          LEFT JOIN users u ON u.id = c.user_id
-         ${profileClause}
+         ${where}
          ORDER BY COALESCE(c.filled_at, c.started_at, c.created_at) DESC
          LIMIT ?`,
         params
@@ -436,7 +494,6 @@ function recordGenerateDone({
         templateId,
         fontFamily,
         cvProvider,
-        startedAt: new Date().toISOString(),
         eventType: 'generate_done',
         eventMeta: { template_id: templateId, cv_provider: cvProvider, font_family: fontFamily }
     });
