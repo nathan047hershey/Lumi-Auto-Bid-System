@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sai</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="popup-brand">
+        <div class="popup-sai-bot" aria-hidden="true">
+          <div class="popup-ear popup-ear--l"><span></span></div>
+          <div class="popup-ear popup-ear--r"><span></span></div>
+          <div class="popup-visor">
+            <svg viewBox="0 0 44 28" aria-hidden="true">
+              <path d="M9 13 Q13 9 17 13" stroke="#00E5FF" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+              <path d="M27 13 Q31 9 35 13" stroke="#00E5FF" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+              <path d="M15 21 Q22 25 29 21" stroke="#00E5FF" stroke-width="2" fill="none" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <h1>Sai <span class="popup-online-dot"></span></h1>
+          <p class="popup-tagline">Your AI Assistant</p>
+        </div>
+      </div>
+      <span class="version">v2.2.2</span>
+    </header>
+
+    <nav class="popup-tabs" role="tablist">
+      <button type="button" class="popup-tab active" data-tab="settings" role="tab" aria-selected="true">Settings</button>
+      <button type="button" class="popup-tab" data-tab="profile" role="tab" aria-selected="false">Profile</button>
+    </nav>
+
+    <main class="popup-content">
+      <div id="tab-settings" class="popup-panel active" role="tabpanel">
+        <section class="settings-section">
+          <h2>MiniMax API</h2>
+          <div class="form-group">
+            <label for="minimaxKey">API Key</label>
+            <input type="password" id="minimaxKey" placeholder="Your MiniMax API key">
+            <p class="help-text">Key from <a href="https://platform.minimax.io/user-center/basic-information/interface-key" target="_blank">platform.minimax.io</a> · <strong>MiniMax-M2.7</strong></p>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>AI Instructions</h2>
+          <div class="form-group">
+            <label for="systemPrompt">System prompt</label>
+            <textarea id="systemPrompt" rows="8">You are a helpful job application assistant. Provide concise, appropriate answers.</textarea>
+            <p class="help-text">Profile JSON is on the <strong>Profile</strong> tab.</p>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>How to Use</h2>
+          <ul class="help-list">
+            <li><strong>Profile</strong> tab → autofill data</li>
+            <li>Tabs: platform apply · then job posting</li>
+            <li>Dock: next · complete always visible · ⋯ (autofill / CV / save)</li>
+            <li><kbd>1</kbd>+<kbd>4</kbd> two answers (platform + MiniMax)</li>
+            <li><kbd>1</kbd>+<kbd>5</kbd> profile fill · <kbd>1</kbd>+<kbd>3</kbd> AI fill</li>
+          </ul>
+        </section>
+      </div>
+
+      <div id="tab-profile" class="popup-panel" role="tabpanel" hidden>
+        <div class="profile-toolbar">
+          <button type="button" id="importBtn" class="btn-secondary">Import</button>
+          <button type="button" id="exportBtn" class="btn-secondary">Export</button>
+          <button type="button" id="toggleJsonBtn" class="btn-secondary">JSON</button>
+          <span id="profileStatus" class="profile-status"></span>
+        </div>
+        <input type="file" id="importFile" accept=".json" style="display:none">
+
+        <!-- Form Editor -->
+        <div id="profileForm" class="profile-form">
+          <!-- Personal -->
+          <div class="profile-section" data-section="personal">
+            <button type="button" class="profile-section-header" aria-expanded="true">
+              <span class="profile-section-arrow">▾</span>
+              <span>Personal Info</span>
+            </button>
+            <div class="profile-section-body">
+              <div class="field-row">
+                <div class="field-group">
+                  <label>First Name</label>
+                  <input type="text" id="firstName" data-key="firstName" placeholder="Jane">
+                </div>
+                <div class="field-group">
+                  <label>Last Name</label>
+                  <input type="text" id="lastName" data-key="lastName" placeholder="Doe">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Preferred Name</label>
+                  <input type="text" id="preferredName" data-key="preferredName" placeholder="Jane">
+                </div>
+                <div class="field-group">
+                  <label>Email</label>
+                  <input type="email" id="email" data-key="email" placeholder="jane@example.com">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Phone</label>
+                  <input type="tel" id="phone" data-key="phone" placeholder="555-0100">
+                </div>
+                <div class="field-group">
+                  <label>LinkedIn</label>
+                  <input type="url" id="linkedin" data-key="linkedin" placeholder="https://linkedin.com/in/jane">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Website / Portfolio</label>
+                  <input type="url" id="website" data-key="website" placeholder="https://jane.dev">
+                </div>
+                <div class="field-group">
+                  <label>Age</label>
+                  <input type="number" id="age" data-key="age" placeholder="28" min="1" max="120">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Address -->
+          <div class="profile-section" data-section="address">
+            <button type="button" class="profile-section-header" aria-expanded="true">
+              <span class="profile-section-arrow">▾</span>
+              <span>Address</span>
+            </button>
+            <div class="profile-section-body">
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Country</label>
+                  <input type="text" id="country" data-key="country" placeholder="United States">
+                </div>
+                <div class="field-group">
+                  <label>State / Province</label>
+                  <input type="text" id="state" data-key="state" placeholder="California">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>City</label>
+                  <input type="text" id="city" data-key="city" placeholder="San Francisco">
+                </div>
+                <div class="field-group">
+                  <label>Zip / Postal Code</label>
+                  <input type="text" id="zipCode" data-key="zipCode" placeholder="94102">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Work Experience -->
+          <div class="profile-section" data-section="employment">
+            <button type="button" class="profile-section-header" aria-expanded="true">
+              <span class="profile-section-arrow">▾</span>
+              <span>Work Experience</span>
+              <button type="button" class="section-add-btn" data-add="employment" title="Add job">+</button>
+            </button>
+            <div class="profile-section-body" id="employmentList">
+              <!-- Dynamic entries -->
+            </div>
+          </div>
+
+          <!-- Education -->
+          <div class="profile-section" data-section="education">
+            <button type="button" class="profile-section-header" aria-expanded="true">
+              <span class="profile-section-arrow">▾</span>
+              <span>Education</span>
+              <button type="button" class="section-add-btn" data-add="education" title="Add school">+</button>
+            </button>
+            <div class="profile-section-body" id="educationList">
+              <!-- Dynamic entries -->
+            </div>
+          </div>
+
+          <!-- EEOC & Screening -->
+          <div class="profile-section" data-section="eeoc">
+            <button type="button" class="profile-section-header" aria-expanded="false">
+              <span class="profile-section-arrow">▾</span>
+              <span>EEOC &amp; Screening</span>
+            </button>
+            <div class="profile-section-body">
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Gender</label>
+                  <select id="gender" data-key="gender">
+                    <option value="">Select...</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Non-binary">Non-binary</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label>Hispanic or Latino</label>
+                  <select id="hispanicLatino" data-key="hispanicLatino">
+                    <option value="">Select...</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Race / Ethnicity</label>
+                  <select id="race" data-key="race">
+                    <option value="">Select...</option>
+                    <option value="Asian">Asian</option>
+                    <option value="Black or African American">Black or African American</option>
+                    <option value="Hispanic or Latino">Hispanic or Latino</option>
+                    <option value="Native American">Native American</option>
+                    <option value="Native Hawaiian or Pacific Islander">Native Hawaiian or Pacific Islander</option>
+                    <option value="Two or More Races">Two or More Races</option>
+                    <option value="White">White</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label>Veteran Status</label>
+                  <select id="veteranStatus" data-key="veteranStatus">
+                    <option value="">Select...</option>
+                    <option value="I am a protected veteran">I am a protected veteran</option>
+                    <option value="I am not a protected veteran">I am not a protected veteran</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Disability Status</label>
+                  <select id="disabilityStatus" data-key="disabilityStatus">
+                    <option value="">Select...</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label>Work Authorization</label>
+                  <select id="workAuth" data-key="workAuth">
+                    <option value="">Select...</option>
+                    <option value="Yes">Yes — authorized to work</option>
+                    <option value="No">No — need sponsorship</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label>Needs Sponsorship</label>
+                  <select id="sponsorship" data-key="sponsorship">
+                    <option value="">Select...</option>
+                    <option value="Yes">Yes — needs visa sponsorship</option>
+                    <option value="No">No — no sponsorship needed</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Profile Summary -->
+          <div class="profile-section" data-section="summary">
+            <button type="button" class="profile-section-header" aria-expanded="false">
+              <span class="profile-section-arrow">▾</span>
+              <span>Profile Summary</span>
+            </button>
+            <div class="profile-section-body">
+              <div class="form-group">
+                <textarea id="profileSummary" data-key="profileSummary" rows="4" placeholder="Brief professional summary for job applications..."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw JSON Editor (hidden by default) -->
+        <div id="profileJsonWrap" class="profile-json-wrap" hidden>
+          <textarea id="profileJson" class="profile-json" rows="20" spellcheck="false" placeholder='{
+  "personal": { "firstName": "", "lastName": "" }
+}'></textarea>
+        </div>
+      </div>
+    </main>
+
+    <footer class="popup-footer">
+      <button type="button" id="saveBtn" class="btn-primary">Save</button>
+      <span id="saveStatus" class="save-status"></span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

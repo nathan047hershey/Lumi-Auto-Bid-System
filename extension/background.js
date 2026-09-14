@@ -4814,7 +4814,7 @@ async function ensureApplyFormVisible(tabId, opts = {}) {
                         apply.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
                         apply.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                         apply.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                        apply.click();
+                        // Do NOT call apply.click() after dispatchEvent — dispatchEvent already fires the click handler.
                         clicked = true;
                     } catch (_) {
                         try { apply.click(); clicked = true; } catch (__) { /* ignore */ }

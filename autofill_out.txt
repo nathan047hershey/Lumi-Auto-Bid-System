@@ -1,0 +1,27 @@
+OK gh host
+OK rippling host
+OK lever host
+OK ashby host
+OK workday host
+OK sr host
+OK ashby before workday attr
+OK random automation-id not workday
+OK wd firstName autoId
+OK wd lastName autoId
+OK wd work auth label
+OK lever full name
+OK ashby sponsor
+OK gh portfolio
+OK city reside
+OK us reside yesno
+OK yoe
+OK relocate
+OK host first workday
+OK visa sponsor full
+OK desired salary
+OK nda acknowledge
+OK ai note consent
+{
+  "failed": 0,
+  "total": 23
+}

@@ -1,0 +1,2 @@
+npm error npx canceled due to missing packages and no YES option: ["eslint@10.10.0"]
+npm error A complete log of this run can be found in: C:\Users\Administrator\AppData\Local\npm-cache\_logs\2026-09-13T13_35_24_356Z-debug-0.log

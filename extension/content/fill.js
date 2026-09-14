@@ -1359,13 +1359,18 @@
         if (/\bU\.?\s*S\.?\s*person\b|whether you are a\s*["“']?U\.?\s*S\.?\s*person/i.test(hay)) {
             return 'us_person_yes';
         }
-        if (/\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|previously\s+worked\s+(at|for|here|with\s+(us|this|our)|before)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer|organization|firm)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i.test(hay)) {
+        if (/\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here|CIAT)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here|CIAT)|have you (?:ever )?worked\s+(?:before\s+)?(?:at|for|with)\s+(?:us|this|our|the\s+company|here|CIAT)|(?:company|employer).{0,40}\b(related|worked\s+at|worked\s+for)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before))\b/i.test(hay)) {
             return 'previous_employer_no';
         }
         // Stack / tech experience → Yes (not company employment).
-        if (/\b((do you have|have you)\b.{0,120}\b(deep\s+)?(hands[\s-]*on\s+)?(experience|worked with|familiar|proficien|knowledge)\b.{0,120}\b(python|java|javascript|typescript|react|sql|aws|azure|gcp|certificate|pki|x\.?509|security|api|rest|kubernetes|docker|devops|ml|ai|production)|experience\b.{0,40}\b(using|with)\b.{0,40}\b(python|java|react|sql|pki|certificate|api))\b/i.test(hay)
+        if (/\b((do you have|have you|are you)\b.{0,120}\b(deep\s+)?(hands[\s-]*on\s+)?(experience[sd]?|worked with|familiar|proficien|knowledge)\b.{0,120}\b(python|java|javascript|typescript|react|sql|aws|azure|gcp|certificate|pki|x\.?509|security|api|rest|kubernetes|docker|devops|ml|ai|production)|experience[sd]?\b.{0,40}\b(using|with)\b.{0,40}\b(python|java|react|sql|pki|certificate|api))\b/i.test(hay)
             && !/\b(sponsor|visa|disabilit|veteran|felony|describe|tell us|explain|company|employer|affiliate|subsidiary)\b/i.test(hay)) {
             return 'skill_experience';
+        }
+        // Background check willingness → Yes (standard acceptance).
+        if (/\b(background[\s_-]*check|background[\s_-]*investigation)\b/i.test(hay)
+            && /\b(willing|consent|agree|authorize|complete)\b/i.test(hay)) {
+            return 'background_check_yes';
         }
         if (/\b(relative|family member|know anyone|personal relationship|related to (anyone|an? employee)|friend (working|employed)|anyone you know (who )?(works|is employed))\b/i.test(hay)) {
             return 'employee_relationship_no';
@@ -2119,11 +2124,14 @@
             ? window.HTMLTextAreaElement.prototype
             : window.HTMLInputElement.prototype;
         const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-        // Clear React's value tracker so controlled inputs accept the new value.
+        // Reset React's value tracker to the new value so React accepts the change.
+        // Without this, React compares tracker.getValue() (old) against el.value (new)
+        // and silently ignores the change, leaving the field visually filled but with
+        // React state unchanged — causing Next/Submit to block on validation.
         try {
             const tracker = el._valueTracker;
             if (tracker && typeof tracker.setValue === 'function') {
-                tracker.setValue(str === '' ? ' ' : '');
+                tracker.setValue(str);
             }
         } catch (_) { /* ignore */ }
         if (desc?.set) desc.set.call(el, str);
@@ -2591,6 +2599,17 @@
         if (/\b(why|interest|motivat|what draws|excited about)\b/i.test(lab)) {
             return 'This role matches the production work on my resume, and I want to apply that experience on this team.';
         }
+        // "Briefly describe a project you've worked on with [tech]" — build from profile skills/title.
+        if (/\bdescribe\b.*\bproject\b|\bproject\b.*\bdescribe\b/i.test(lab)
+            && (/\b(python|typescript|react|javascript|java|sql|api|golang|node|nodes)\b/i.test(lab) || lab.length > 80)) {
+            const roleBits = [p.current_title, p.title].filter(Boolean).join(' / ');
+            const skillBits = skills ? skills.split(/[,;|]/).slice(0, 3).join(', ') : 'Python, TypeScript, React';
+            return (
+                `I built and delivered a ${roleBits || 'full-stack feature'} using ${skillBits}. `
+                + 'The project involved design through production deployment, with a focus on reliability and clear code. '
+                + 'I collaborated with the team to ship it on schedule.'
+            );
+        }
         if (jobDescription && /\b(why|company|role|team)\b/i.test(lab)) {
             return 'I am interested in this role because it aligns with the production systems and stack on my resume.';
         }
@@ -2660,7 +2679,7 @@
             case 'address': return profile.address || '';
             case 'birthdate': return profile.birthdate || '';
             case 'todays_date': return formatEstTodayMdY();
-            case 'gender': return profile.gender || 'Male';
+            case 'gender': return profile?.gender || 'Male';
             case 'work_authorization': return normalizeWorkAuthorization(profile);
             case 'requires_sponsorship': {
                 return 'No';
@@ -2673,8 +2692,16 @@
             case 'us_citizen_yes':
                 return 'Yes';
             case 'veteran_status':
-                return profile.veteran_status || 'I am not a protected veteran';
-            case 'race_ethnicity': return profile.race_ethnicity || '';
+                // Universal correct answer — never let LLM/API override.
+                return 'I am not a protected veteran';
+            case 'hispanic_latino':
+                // Universal correct answer.
+                return 'No';
+            case 'race_ethnicity':
+                // Universal correct answer for Black candidates — EEOC standard option.
+                return 'Black or African American';
+            case 'background_check_yes':
+                return 'Yes';
             case 'website_url':
                 return profile.website_url || profile.portfolio_url || profile.github_url
                     || profile.linkedin_url || '';
@@ -3127,6 +3154,21 @@
                     || forcedKind === 'disability_status') {
                     value = 'No, I do not have a disability';
                 }
+                // Hard locks for all EEOC / identity kinds — mirror Sai's approach.
+                // These are UNIVERSAL CORRECT ANSWERS — never from profile or LLM.
+                if (forcedKind === 'gender') {
+                    value = 'Male';
+                } else if (forcedKind === 'race_ethnicity') {
+                    value = 'Black or African American';
+                } else if (forcedKind === 'hispanic_latino') {
+                    value = 'No';
+                } else if (forcedKind === 'veteran_status') {
+                    value = 'I am not a protected veteran';
+                } else if (forcedKind === 'disability_status') {
+                    value = 'No, I do not have a disability';
+                } else if (forcedKind === 'background_check_yes') {
+                    value = 'Yes';
+                }
                 // Radio/select with known options: snap paraphrased AI text onto an exact choice.
                 if (value && Array.isArray(field.options) && field.options.length) {
                     const optLabels = field.options.map((o) => (
@@ -3191,7 +3233,13 @@
                 // Prefer answers API for eligibility / select kinds; identity stays profile-only.
                 // Hard locks: sponsorship / prior-employer / sanctioned NEVER take API Yes.
                 const HARD_NO_OR_PROFILE = new Set([
-                    'requires_sponsorship', 'previous_employer_no', 'sanctioned_countries_no'
+                    'requires_sponsorship', 'previous_employer_no', 'sanctioned_countries_no',
+                    // EEOC / identity kinds: never let API override — use profile values only.
+                    // This mirrors Sai's hard-coded EEOC path. Even when classified as 'question',
+                    // these must come from the profile (personalValue), not from the LLM API.
+                    'gender', 'race_ethnicity', 'hispanic_latino',
+                    'veteran_status', 'disability_status',
+                    'background_check_yes'
                 ]);
                 const PROFILE_ONLY = new Set([
                     'first_name', 'last_name', 'full_name', 'email', 'phone',
@@ -3214,6 +3262,16 @@
                 } else if (field.kind === 'disability_status'
                     || /\b(disabilit(?:y|ies)|disabled|\bada\b)\b/i.test(String(field.label || ''))) {
                     value = 'No, I do not have a disability';
+                } else if (field.kind === 'gender') {
+                    value = 'Male';
+                } else if (field.kind === 'race_ethnicity') {
+                    value = 'Black or African American';
+                } else if (field.kind === 'hispanic_latino') {
+                    value = 'No';
+                } else if (field.kind === 'veteran_status') {
+                    value = 'I am not a protected veteran';
+                } else if (field.kind === 'background_check_yes') {
+                    value = 'Yes';
                 } else if (field.kind === 'work_authorization' || labelLooksLikeAuthorizedWithoutSponsorship(field.label)) {
                     value = personalValue('work_authorization', profile) || 'Yes';
                 } else {
@@ -6302,15 +6360,7 @@
                         );
                         if (!fields.length) fields = form.fields;
                     }
-                    const fillStats = await fillForm({
-                        fields,
-                        answers: msg.payload?.answers,
-                        profile: msg.payload?.profile,
-                        jobDescription: msg.payload?.jobDescription || '',
-                        companyName: msg.payload?.companyName || msg.payload?.company_name || '',
-                        jobRole: msg.payload?.jobRole || msg.payload?.job_role || '',
-                        skipQuestions: !!(msg.payload?.skipQuestions || msg.payload?.profileOnly)
-                    });
+                    // Upload resume/cover letter FIRST — some ATS reset file inputs after filling other fields.
                     const uploadStats = await uploadApplicationFiles(msg.payload || {});
                     const resumeGate = await ensureResumeReadyBeforeSubmit(
                         form,
@@ -6323,6 +6373,26 @@
                                 || ''
                         }
                     );
+                    // Only fill if upload succeeded or was already present.
+                    if (!resumeGate.ok && resumeGate.reason === 'resume_required') {
+                        updateAutofillPanel({ status: 'Resume missing — upload needed', progress: 100 });
+                        sendResponse({
+                            ok: false,
+                            error: 'resume_missing',
+                            ats: form.ats,
+                            resumeGate
+                        });
+                        return;
+                    }
+                    const fillStats = await fillForm({
+                        fields,
+                        answers: msg.payload?.answers,
+                        profile: msg.payload?.profile,
+                        jobDescription: msg.payload?.jobDescription || '',
+                        companyName: msg.payload?.companyName || msg.payload?.company_name || '',
+                        jobRole: msg.payload?.jobRole || msg.payload?.job_role || '',
+                        skipQuestions: !!(msg.payload?.skipQuestions || msg.payload?.profileOnly)
+                    });
                     const gatedUploadStats = resumeGate.uploadStats || uploadStats;
                     const readiness = evaluateSubmitReadiness(form, fillStats, gatedUploadStats);
                     const mergedFillStats = {

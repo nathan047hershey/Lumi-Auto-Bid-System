@@ -20,7 +20,7 @@
     const DEFAULT_BUDGET_MS = 90 * 1000;
 
     /** Company / related company-or-role employment → No. Not tech "worked with". */
-    const FORMER_EMPLOYEE_RE = /\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|been employed by\b|worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|the\s+company|here)|ever\s+worked\s+(?:before\s+)?(?:at|for|with)\s+(us|this|our|here)|previously\s+worked\s+(at|for|here|with\s+(us|this|our)|before)|have you (?:ever )?worked\s+(?:before\s+)?(?:(?:at|for|with)\s+)?(?:this|our|the)\s+(?:company|employer|organization|firm)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|(?:company|employer).{0,40}\brelated\b|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before)|employed by .{0,40} before)\b/i;
+    const FORMER_EMPLOYEE_RE = /\b(are you a former\b|former\b.{0,48}\bemployee|employed by\b|ever been employed|have (?:you )?ever been employed|been employed by\b|have you (?:ever )?worked\s+(?:before\s+)?(?:at|for|with)\s+(?:us|this|our|the\s+company|here|CIAT)|(?:company|employer).{0,40}\b(related|worked\s+at|worked\s+for)|(?:related|affiliate|subsidiary|sister|parent|associated)\s+(?:company|companies|employer|entity|role|position)|(?:company|employer).{0,40}\brelated\b|related\s+(?:company|role|position|employer)|same\s+(?:company|employer)|permanent or temporary employee|(?:currently|previously)\s+(?:\([^)]*\)\s*)?working\s+for|working\s+for\b.{0,80}\b(contractor|contingent)|contractor or contingent|contingent worker|as an?\s+(employee|contractor|contingent)|employee or (?:a )?contractor|internal (?:candidate|employee)|applied (?:here|to (?:us|this)|before)|employed by .{0,40} before)\b/i;
     /** Tech/stack/tool experience → Yes (Python, PKI, APIs, etc.). */
     const SKILL_STACK_RE = /\b(python|java|javascript|typescript|react|node\.?js|golang|go\b|\.net|c\+\+|c#|sql|aws|azure|gcp|kubernetes|k8s|docker|linux|api|rest|graphql|certificate|pki|x\.?509|machine identity|lifecycle management|security infrastructure|devops|terraform|ansible|spark|kafka|redis|mongo|postgres|postgresql|machine learning|\bml\b|\bai\b|llm|chatgpt|copilot)\b/i;
     const SKILL_EXPERIENCE_YES_RE = /\b((do you have|have you)\b.{0,140}\b(deep\s+)?(hands[\s-]*on\s+)?(experience|worked with|familiar|proficien|knowledge|expertise)\b|(experience|hands[\s-]*on|worked with|familiar|proficien)\b.{0,80}\b(with|in|using)\b)/i;
@@ -967,6 +967,16 @@
         const desc = Object.getOwnPropertyDescriptor(proto, 'value');
         if (desc?.set) desc.set.call(el, value);
         else el.value = value;
+        // Reset _valueTracker so React accepts the change — without this, React's
+        // synthetic event handler compares against tracker.getValue() (the old value)
+        // and silently ignores the change, leaving the field visually filled but
+        // with React state unchanged, causing Next/Submit to block on validation.
+        try {
+            const tracker = el._valueTracker;
+            if (tracker) {
+                tracker.setValue(el.value || '');
+            }
+        } catch (_) { /* ignore — some elements don't expose _valueTracker */ }
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -2116,10 +2126,13 @@
             return 'I am not a protected veteran';
         }
         if (kind === 'gender' || /\bgender\b/i.test(lab) || /\bthink of yourself as\b/i.test(lab)) {
-            return profile?.gender || 'Male';
+            return 'Male';
         }
         if (kind === 'race_ethnicity' || /\bidentify your race\b/i.test(lab) || /\brace\b/i.test(lab)) {
-            return profile?.race_ethnicity || '';
+            return 'Black or African American';
+        }
+        if (kind === 'disability_status' || /\bdisabilit/i.test(lab)) {
+            return 'No, I do not have a disability';
         }
         if (kind === 'skill_experience'
             || /\bbest describes.{0,40}experience\b/i.test(lab)
@@ -2311,7 +2324,8 @@
             const lab = String(f.label || '');
             const got = readCurrentValue(f);
             if (kind === 'race_ethnicity' || /\bidentify your race\b/i.test(lab)) {
-                const want = String(profile?.race_ethnicity || '').trim();
+                // Hard-coded correct answer — not from profile.
+                const want = 'Black or African American';
                 if (!want) continue;
                 const empty = !got || isPlaceholderValue(got);
                 const helper = cm();
@@ -2320,6 +2334,37 @@
                     const r = await fillOne(f, want, 2, profile);
                     if (r?.ok) swept += 1;
                     await sleep(120);
+                }
+                continue;
+            }
+            // 1e-2) Race "mark all that apply" checkbox groups — each checkbox
+            // needs fillCheckbox called individually with a single race value.
+            if (kind === 'race_ethnicity' || /\bidentify your race\b/i.test(lab)) {
+                if (f.type !== 'checkbox') continue;
+                // Hard-coded correct answer — not from profile.
+                const want = 'Black or African American';
+                if (!want) continue;
+                const wantValues = want.split(',').map((v) => v.trim()).filter(Boolean);
+                if (!wantValues.length) continue;
+                for (const wantVal of wantValues) {
+                    for (const cf of fields) {
+                        if (cf.type !== 'checkbox') continue;
+                        const cfLab = String(cf.label || '').toLowerCase();
+                        const helper = cm();
+                        let match = false;
+                        if (helper) {
+                            if (helper.scoreChoice(wantVal, cfLab, '') >= 60) match = true;
+                        } else if (cfLab.includes(wantVal.toLowerCase()) || wantVal.toLowerCase().includes(cfLab)) {
+                            match = true;
+                        }
+                        if (!match) continue;
+                        const el = findEl(cf);
+                        if (el && !el.checked) {
+                            const r = await fillCheckbox(cf, 'Yes');
+                            if (r?.ok) swept += 1;
+                            await sleep(80);
+                        }
+                    }
                 }
                 continue;
             }

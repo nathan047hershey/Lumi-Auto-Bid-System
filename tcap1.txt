@@ -1,0 +1,179 @@
+=== CAPTCHA unit matrix (all platforms × variants) ===
+PASS greenhouse/clean_apply
+PASS greenhouse/recaptcha_widget
+PASS greenhouse/hcaptcha_widget
+PASS greenhouse/turnstile_widget
+PASS greenhouse/arkose_html
+PASS greenhouse/geetest_html
+PASS greenhouse/aws_waf_html
+PASS greenhouse/mtcaptcha_html
+PASS greenhouse/cloudflare_challenge_copy
+PASS greenhouse/datadome_copy
+PASS greenhouse/oracle_human_prove
+PASS greenhouse/login_wall
+PASS greenhouse/recaptcha_iframe
+PASS lever/clean_apply
+PASS lever/recaptcha_widget
+PASS lever/hcaptcha_widget
+PASS lever/turnstile_widget
+PASS lever/arkose_html
+PASS lever/geetest_html
+PASS lever/aws_waf_html
+PASS lever/mtcaptcha_html
+PASS lever/cloudflare_challenge_copy
+PASS lever/datadome_copy
+PASS lever/oracle_human_prove
+PASS lever/login_wall
+PASS lever/recaptcha_iframe
+PASS ashby/clean_apply
+PASS ashby/recaptcha_widget
+PASS ashby/hcaptcha_widget
+PASS ashby/turnstile_widget
+PASS ashby/arkose_html
+PASS ashby/geetest_html
+PASS ashby/aws_waf_html
+PASS ashby/mtcaptcha_html
+PASS ashby/cloudflare_challenge_copy
+PASS ashby/datadome_copy
+PASS ashby/oracle_human_prove
+PASS ashby/login_wall
+PASS ashby/recaptcha_iframe
+PASS workday/clean_apply
+PASS workday/recaptcha_widget
+PASS workday/hcaptcha_widget
+PASS workday/turnstile_widget
+PASS workday/arkose_html
+PASS workday/geetest_html
+PASS workday/aws_waf_html
+PASS workday/mtcaptcha_html
+PASS workday/cloudflare_challenge_copy
+PASS workday/datadome_copy
+PASS workday/oracle_human_prove
+PASS workday/login_wall
+PASS workday/recaptcha_iframe
+PASS oracle/clean_apply
+PASS oracle/recaptcha_widget
+PASS oracle/hcaptcha_widget
+PASS oracle/turnstile_widget
+PASS oracle/arkose_html
+PASS oracle/geetest_html
+PASS oracle/aws_waf_html
+PASS oracle/mtcaptcha_html
+PASS oracle/cloudflare_challenge_copy
+PASS oracle/datadome_copy
+PASS oracle/oracle_human_prove
+PASS oracle/login_wall
+PASS oracle/recaptcha_iframe
+PASS smartrecruiters/clean_apply
+PASS smartrecruiters/recaptcha_widget
+PASS smartrecruiters/hcaptcha_widget
+PASS smartrecruiters/turnstile_widget
+PASS smartrecruiters/arkose_html
+PASS smartrecruiters/geetest_html
+PASS smartrecruiters/aws_waf_html
+PASS smartrecruiters/mtcaptcha_html
+PASS smartrecruiters/cloudflare_challenge_copy
+PASS smartrecruiters/datadome_copy
+PASS smartrecruiters/oracle_human_prove
+PASS smartrecruiters/login_wall
+PASS smartrecruiters/recaptcha_iframe
+PASS icims/clean_apply
+PASS icims/recaptcha_widget
+PASS icims/hcaptcha_widget
+PASS icims/turnstile_widget
+PASS icims/arkose_html
+PASS icims/geetest_html
+PASS icims/aws_waf_html
+PASS icims/mtcaptcha_html
+PASS icims/cloudflare_challenge_copy
+PASS icims/datadome_copy
+PASS icims/oracle_human_prove
+PASS icims/login_wall
+PASS icims/recaptcha_iframe
+PASS bamboohr/clean_apply
+PASS bamboohr/recaptcha_widget
+PASS bamboohr/hcaptcha_widget
+PASS bamboohr/turnstile_widget
+PASS bamboohr/arkose_html
+PASS bamboohr/geetest_html
+PASS bamboohr/aws_waf_html
+PASS bamboohr/mtcaptcha_html
+PASS bamboohr/cloudflare_challenge_copy
+PASS bamboohr/datadome_copy
+PASS bamboohr/oracle_human_prove
+PASS bamboohr/login_wall
+PASS bamboohr/recaptcha_iframe
+PASS generic/clean_apply
+PASS generic/recaptcha_widget
+PASS generic/hcaptcha_widget
+PASS generic/turnstile_widget
+PASS generic/arkose_html
+PASS generic/geetest_html
+PASS generic/aws_waf_html
+PASS generic/mtcaptcha_html
+PASS generic/cloudflare_challenge_copy
+PASS generic/datadome_copy
+PASS generic/oracle_human_prove
+PASS generic/login_wall
+PASS generic/recaptcha_iframe
+PASS linkedin/clean_apply
+PASS linkedin/recaptcha_widget
+PASS linkedin/hcaptcha_widget
+PASS linkedin/turnstile_widget
+PASS linkedin/arkose_html
+PASS linkedin/geetest_html
+PASS linkedin/aws_waf_html
+PASS linkedin/mtcaptcha_html
+PASS linkedin/cloudflare_challenge_copy
+PASS linkedin/datadome_copy
+PASS linkedin/oracle_human_prove
+PASS linkedin/login_wall
+PASS linkedin/recaptcha_iframe
+
+=== CAPTCHA DOM matrix (widget selectors) ===
+(node:6692) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Vincent/Projects/01.%20Lumi-Auto-Bid-System/Lumi-Auto-Bid-System/extension/lib/captchaPass.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Vincent\Projects\01. Lumi-Auto-Bid-System\Lumi-Auto-Bid-System\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+DOM PASS greenhouse/clean_apply 
+DOM PASS greenhouse/recaptcha_widget 
+DOM PASS greenhouse/hcaptcha_widget 
+DOM PASS greenhouse/turnstile_widget 
+DOM PASS greenhouse/arkose_html 
+DOM PASS greenhouse/cloudflare_challenge_copy 
+DOM PASS greenhouse/datadome_copy 
+DOM PASS greenhouse/oracle_human_prove 
+DOM PASS greenhouse/login_wall 
+DOM PASS greenhouse/recaptcha_iframe 
+DOM PASS lever/clean_apply 
+DOM PASS lever/recaptcha_widget 
+DOM PASS lever/hcaptcha_widget 
+DOM PASS lever/turnstile_widget 
+DOM PASS lever/arkose_html 
+DOM PASS lever/cloudflare_challenge_copy 
+DOM PASS lever/datadome_copy 
+DOM PASS lever/oracle_human_prove 
+DOM PASS lever/login_wall 
+DOM PASS lever/recaptcha_iframe 
+DOM PASS ashby/clean_apply 
+DOM PASS ashby/recaptcha_widget 
+DOM PASS ashby/hcaptcha_widget 
+DOM PASS ashby/turnstile_widget 
+DOM PASS ashby/arkose_html 
+DOM PASS ashby/cloudflare_challenge_copy 
+DOM PASS ashby/datadome_copy 
+DOM PASS ashby/oracle_human_prove 
+DOM PASS ashby/login_wall 
+DOM PASS ashby/recaptcha_iframe 
+DOM PASS workday/clean_apply 
+DOM PASS workday/recaptcha_widget 
+DOM PASS workday/hcaptcha_widget 
+DOM PASS workday/turnstile_widget 
+DOM PASS workday/arkose_html 
+DOM PASS workday/cloudflare_challenge_copy 
+DOM PASS workday/datadome_copy 
+DOM PASS workday/oracle_human_prove 
+DOM PASS workday/login_wall 
+DOM PASS workday/recaptcha_iframe 
+DOM PASS oracle/clean_apply 
+DOM PASS oracle/recaptcha_widget 

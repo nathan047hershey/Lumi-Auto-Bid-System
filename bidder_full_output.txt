@@ -1,0 +1,477 @@
+
+> job-apply-master@1.0.0 test:bidder
+> node extension/fixtures/test_ats_detect.js && node extension/fixtures/test_captcha_pass.js && node extension/fixtures/test_captcha_vendor_engineer.js && node extension/fixtures/test_captcha_all_platforms.js && node extension/fixtures/test_unattended_captcha.js && node extension/fixtures/test_autofill_engine.js && node extension/fixtures/test_fill_verify.js && node extension/fixtures/test_bidder_queue_defaults.js && node extension/fixtures/test_select_wait_loading.js && node extension/fixtures/test_bidder_brain.js && node extension/fixtures/test_bidder_fill_unit.js && node extension/fixtures/test_bidder_page_bridge.js && node extension/fixtures/test_bidder_ready_queue.js && node extension/fixtures/test_bidder_onetrust_course.js && node extension/fixtures/test_autofill_file_routing.js && node extension/fixtures/test_autofill_select_radio.js && node extension/fixtures/test_coreweave_reliability.js && node extension/fixtures/test_snap_mcq_answers.js && node extension/fixtures/test_update_state_success.js && node extension/fixtures/test_lumi_bidder_prefs.js
+
+PASS oracle host
+PASS greenhouse host
+PASS zoominfo gh_jid is greenhouse
+PASS zoominfo gh_jid isGreenhouseUrl
+PASS oracle not greenhouse
+PASS oracle url wins over dom greenhouse
+PASS generic when unknown url and dom greenhouse
+PASS greenhouse url uses greenhouse engine
+PASS ashby host
+PASS lever host
+PASS workday host
+PASS icims host
+PASS bamboohr host
+PASS smartrecruiters host
+PASS linkedin host
+PASS rippling host
+PASS linkedin always wins
+PASS ashby url wins over greenhouse dom
+PASS workday url wins over greenhouse dom
+PASS ashby JD url detected
+PASS ashby application not JD
+PASS ashbyApplicationUrl appends /application
+PASS ashbyApplicationUrl idempotent
+
+All 23 ats-detect checks passed.
+PASS recaptcha widget
+PASS cloudflare copy
+PASS turnstile token + challenge
+PASS arkose mentioned
+PASS normal apply form not captcha
+PASS login wall
+PASS apply form with sign-in word not login wall
+PASS careers JD Sign In header is not login wall
+PASS oracle-ish human check
+PASS passive widget is captcha
+PASS passive widget NOT blocking when form ready
+PASS passive widget NOT blocking before form (keep polling)
+PASS passive widget IS blocking before submit when helper on
+PASS solved widget not captcha
+PASS solved widget not blocking for submit
+PASS cloudflare interstitial IS blocking
+PASS hard vendor without widget still blocks when formReady
+PASS hard vendor with on-form widget does not block fill
+PASS login wall IS blocking even with formReady
+PASS gh form+robot copy still captcha signal
+PASS gh form+robot copy is NOT hard challengeCopy
+PASS gh form+robot NOT blocking when form ready → start fill
+PASS gh form+robot still pauses at submit with helper
+PASS zoominfo thank-you is thank-you page
+PASS thank-you + leftover recaptcha is NOT captcha
+PASS thank-you + leftover recaptcha is NOT login
+PASS thank-you wall not blocking at submit
+
+All 27 captcha-pass checks passed.
+PASS all vendors listed
+PASS catalog size
+PASS detect recaptcha
+PASS detect hcaptcha
+PASS detect turnstile
+PASS detect arkose
+PASS detect datadome
+PASS detect perimeterx
+PASS detect geetest
+PASS detect aws_waf
+PASS detect mtcaptcha
+PASS detect keycaptcha
+PASS detect friendly
+PASS detect lemin
+PASS detect cloudflare
+PASS recaptcha helper ON → wait
+PASS hcaptcha helper ON → wait
+PASS turnstile helper ON → wait
+PASS arkose helper ON → wait
+PASS datadome helper ON → wait
+PASS geetest helper ON → wait
+PASS aws_waf helper ON → wait
+PASS generic helper ON → wait
+PASS hcaptcha helper OFF → skip
+PASS arkose helper OFF → skip
+PASS login human
+PASS recommend recaptcha
+PASS recommend turnstile
+PASS label aws
+PASS classify turnstile
+
+All 30 captcha-vendor-engineer checks passed.
+=== CAPTCHA unit matrix (all platforms × variants) ===
+PASS greenhouse/clean_apply
+PASS greenhouse/recaptcha_widget
+PASS greenhouse/hcaptcha_widget
+PASS greenhouse/turnstile_widget
+PASS greenhouse/arkose_html
+PASS greenhouse/geetest_html
+PASS greenhouse/aws_waf_html
+PASS greenhouse/mtcaptcha_html
+PASS greenhouse/cloudflare_challenge_copy
+PASS greenhouse/datadome_copy
+PASS greenhouse/oracle_human_prove
+PASS greenhouse/login_wall
+PASS greenhouse/recaptcha_iframe
+PASS lever/clean_apply
+PASS lever/recaptcha_widget
+PASS lever/hcaptcha_widget
+PASS lever/turnstile_widget
+PASS lever/arkose_html
+PASS lever/geetest_html
+PASS lever/aws_waf_html
+PASS lever/mtcaptcha_html
+PASS lever/cloudflare_challenge_copy
+PASS lever/datadome_copy
+PASS lever/oracle_human_prove
+PASS lever/login_wall
+PASS lever/recaptcha_iframe
+PASS ashby/clean_apply
+PASS ashby/recaptcha_widget
+PASS ashby/hcaptcha_widget
+PASS ashby/turnstile_widget
+PASS ashby/arkose_html
+PASS ashby/geetest_html
+PASS ashby/aws_waf_html
+PASS ashby/mtcaptcha_html
+PASS ashby/cloudflare_challenge_copy
+PASS ashby/datadome_copy
+PASS ashby/oracle_human_prove
+PASS ashby/login_wall
+PASS ashby/recaptcha_iframe
+PASS workday/clean_apply
+PASS workday/recaptcha_widget
+PASS workday/hcaptcha_widget
+PASS workday/turnstile_widget
+PASS workday/arkose_html
+PASS workday/geetest_html
+PASS workday/aws_waf_html
+PASS workday/mtcaptcha_html
+PASS workday/cloudflare_challenge_copy
+PASS workday/datadome_copy
+PASS workday/oracle_human_prove
+PASS workday/login_wall
+PASS workday/recaptcha_iframe
+PASS oracle/clean_apply
+PASS oracle/recaptcha_widget
+PASS oracle/hcaptcha_widget
+PASS oracle/turnstile_widget
+PASS oracle/arkose_html
+PASS oracle/geetest_html
+PASS oracle/aws_waf_html
+PASS oracle/mtcaptcha_html
+PASS oracle/cloudflare_challenge_copy
+PASS oracle/datadome_copy
+PASS oracle/oracle_human_prove
+PASS oracle/login_wall
+PASS oracle/recaptcha_iframe
+PASS smartrecruiters/clean_apply
+PASS smartrecruiters/recaptcha_widget
+PASS smartrecruiters/hcaptcha_widget
+PASS smartrecruiters/turnstile_widget
+PASS smartrecruiters/arkose_html
+PASS smartrecruiters/geetest_html
+PASS smartrecruiters/aws_waf_html
+PASS smartrecruiters/mtcaptcha_html
+PASS smartrecruiters/cloudflare_challenge_copy
+PASS smartrecruiters/datadome_copy
+PASS smartrecruiters/oracle_human_prove
+PASS smartrecruiters/login_wall
+PASS smartrecruiters/recaptcha_iframe
+PASS icims/clean_apply
+PASS icims/recaptcha_widget
+PASS icims/hcaptcha_widget
+PASS icims/turnstile_widget
+PASS icims/arkose_html
+PASS icims/geetest_html
+PASS icims/aws_waf_html
+PASS icims/mtcaptcha_html
+PASS icims/cloudflare_challenge_copy
+PASS icims/datadome_copy
+PASS icims/oracle_human_prove
+PASS icims/login_wall
+PASS icims/recaptcha_iframe
+PASS bamboohr/clean_apply
+PASS bamboohr/recaptcha_widget
+PASS bamboohr/hcaptcha_widget
+PASS bamboohr/turnstile_widget
+PASS bamboohr/arkose_html
+PASS bamboohr/geetest_html
+PASS bamboohr/aws_waf_html
+PASS bamboohr/mtcaptcha_html
+PASS bamboohr/cloudflare_challenge_copy
+PASS bamboohr/datadome_copy
+PASS bamboohr/oracle_human_prove
+PASS bamboohr/login_wall
+PASS bamboohr/recaptcha_iframe
+PASS generic/clean_apply
+PASS generic/recaptcha_widget
+PASS generic/hcaptcha_widget
+PASS generic/turnstile_widget
+PASS generic/arkose_html
+PASS generic/geetest_html
+PASS generic/aws_waf_html
+PASS generic/mtcaptcha_html
+PASS generic/cloudflare_challenge_copy
+PASS generic/datadome_copy
+PASS generic/oracle_human_prove
+PASS generic/login_wall
+PASS generic/recaptcha_iframe
+PASS linkedin/clean_apply
+PASS linkedin/recaptcha_widget
+PASS linkedin/hcaptcha_widget
+PASS linkedin/turnstile_widget
+PASS linkedin/arkose_html
+PASS linkedin/geetest_html
+PASS linkedin/aws_waf_html
+PASS linkedin/mtcaptcha_html
+PASS linkedin/cloudflare_challenge_copy
+PASS linkedin/datadome_copy
+PASS linkedin/oracle_human_prove
+PASS linkedin/login_wall
+PASS linkedin/recaptcha_iframe
+
+=== CAPTCHA DOM matrix (widget selectors) ===
+DOM PASS greenhouse/clean_apply 
+DOM PASS greenhouse/recaptcha_widget 
+DOM PASS greenhouse/hcaptcha_widget 
+DOM PASS greenhouse/turnstile_widget 
+DOM PASS greenhouse/arkose_html 
+DOM PASS greenhouse/cloudflare_challenge_copy 
+DOM PASS greenhouse/datadome_copy 
+DOM PASS greenhouse/oracle_human_prove 
+DOM PASS greenhouse/login_wall 
+DOM PASS greenhouse/recaptcha_iframe 
+DOM PASS lever/clean_apply 
+DOM PASS lever/recaptcha_widget 
+DOM PASS lever/hcaptcha_widget 
+DOM PASS lever/turnstile_widget 
+DOM PASS lever/arkose_html 
+DOM PASS lever/cloudflare_challenge_copy 
+DOM PASS lever/datadome_copy 
+DOM PASS lever/oracle_human_prove 
+DOM PASS lever/login_wall 
+DOM PASS lever/recaptcha_iframe 
+DOM PASS ashby/clean_apply 
+DOM PASS ashby/recaptcha_widget 
+DOM PASS ashby/hcaptcha_widget 
+DOM PASS ashby/turnstile_widget 
+DOM PASS ashby/arkose_html 
+DOM PASS ashby/cloudflare_challenge_copy 
+DOM PASS ashby/datadome_copy 
+DOM PASS ashby/oracle_human_prove 
+DOM PASS ashby/login_wall 
+DOM PASS ashby/recaptcha_iframe 
+DOM PASS workday/clean_apply 
+DOM PASS workday/recaptcha_widget 
+DOM PASS workday/hcaptcha_widget 
+DOM PASS workday/turnstile_widget 
+DOM PASS workday/arkose_html 
+DOM PASS workday/cloudflare_challenge_copy 
+DOM PASS workday/datadome_copy 
+DOM PASS workday/oracle_human_prove 
+DOM PASS workday/login_wall 
+DOM PASS workday/recaptcha_iframe 
+DOM PASS oracle/clean_apply 
+DOM PASS oracle/recaptcha_widget 
+DOM PASS oracle/hcaptcha_widget 
+DOM PASS oracle/turnstile_widget 
+DOM PASS oracle/arkose_html 
+DOM PASS oracle/cloudflare_challenge_copy 
+DOM PASS oracle/datadome_copy 
+DOM PASS oracle/oracle_human_prove 
+DOM PASS oracle/login_wall 
+DOM PASS oracle/recaptcha_iframe 
+DOM PASS smartrecruiters/clean_apply 
+DOM PASS smartrecruiters/recaptcha_widget 
+DOM PASS smartrecruiters/hcaptcha_widget 
+DOM PASS smartrecruiters/turnstile_widget 
+DOM PASS smartrecruiters/arkose_html 
+DOM PASS smartrecruiters/cloudflare_challenge_copy 
+DOM PASS smartrecruiters/datadome_copy 
+DOM PASS smartrecruiters/oracle_human_prove 
+DOM PASS smartrecruiters/login_wall 
+DOM PASS smartrecruiters/recaptcha_iframe 
+DOM PASS icims/clean_apply 
+DOM PASS icims/recaptcha_widget 
+DOM PASS icims/hcaptcha_widget 
+DOM PASS icims/turnstile_widget 
+DOM PASS icims/arkose_html 
+DOM PASS icims/cloudflare_challenge_copy 
+DOM PASS icims/datadome_copy 
+DOM PASS icims/oracle_human_prove 
+DOM PASS icims/login_wall 
+DOM PASS icims/recaptcha_iframe 
+DOM PASS bamboohr/clean_apply 
+DOM PASS bamboohr/recaptcha_widget 
+DOM PASS bamboohr/hcaptcha_widget 
+DOM PASS bamboohr/turnstile_widget 
+DOM PASS bamboohr/arkose_html 
+DOM PASS bamboohr/cloudflare_challenge_copy 
+DOM PASS bamboohr/datadome_copy 
+DOM PASS bamboohr/oracle_human_prove 
+DOM PASS bamboohr/login_wall 
+DOM PASS bamboohr/recaptcha_iframe 
+DOM PASS generic/clean_apply 
+DOM PASS generic/recaptcha_widget 
+DOM PASS generic/hcaptcha_widget 
+DOM PASS generic/turnstile_widget 
+DOM PASS generic/arkose_html 
+DOM PASS generic/cloudflare_challenge_copy 
+DOM PASS generic/datadome_copy 
+DOM PASS generic/oracle_human_prove 
+DOM PASS generic/login_wall 
+DOM PASS generic/recaptcha_iframe 
+DOM PASS linkedin/clean_apply 
+DOM PASS linkedin/recaptcha_widget 
+DOM PASS linkedin/hcaptcha_widget 
+DOM PASS linkedin/turnstile_widget 
+DOM PASS linkedin/arkose_html 
+DOM PASS linkedin/cloudflare_challenge_copy 
+DOM PASS linkedin/datadome_copy 
+DOM PASS linkedin/oracle_human_prove 
+DOM PASS linkedin/login_wall 
+DOM PASS linkedin/recaptcha_iframe 
+
+{
+  "unit": {
+    "failed": 0,
+    "passed": 130,
+    "total": 130
+  },
+  "dom": {
+    "skipped": false,
+    "failed": 0,
+    "passed": 100,
+    "total": 100
+  },
+  "platforms": [
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workday",
+    "oracle",
+    "smartrecruiters",
+    "icims",
+    "bamboohr",
+    "generic",
+    "linkedin"
+  ],
+  "variants": [
+    "clean_apply",
+    "recaptcha_widget",
+    "hcaptcha_widget",
+    "turnstile_widget",
+    "arkose_html",
+    "geetest_html",
+    "aws_waf_html",
+    "mtcaptcha_html",
+    "cloudflare_challenge_copy",
+    "datadome_copy",
+    "oracle_human_prove",
+    "login_wall",
+    "recaptcha_iframe"
+  ]
+}
+PASS defaults unattended off
+PASS defaults grace 45s
+PASS defaults human assist 90s
+PASS defaults attended timeout 1h
+PASS unattended uses grace
+PASS unattended zero grace
+PASS attended long wait
+PASS attended focus off = no wait
+PASS abandon after grace
+PASS no abandon if cleared
+PASS no abandon attended
+PASS defaults helper on
+PASS defaults helper wait 90s
+PASS helper stretches grace to 90s
+PASS no helper keeps 45s
+
+All 15 unattended-captcha checks passed.
+PASS engine id
+PASS max pages default
+PASS retry default
+PASS min coverage
+PASS bid hard limit ~90s
+PASS oracle label
+PASS ashby label
+PASS workday label
+PASS icims label
+PASS bamboohr label
+PASS generic label
+PASS linkedin label
+PASS oracle settle slower
+PASS workday more pages
+PASS fingerprint stable
+PASS fingerprint changes on page
+PASS field count
+PASS merge overwrites by id
+PASS merge keeps new
+PASS lesson beats llm
+PASS lesson survives later llm
+PASS pick new questions
+PASS should advance when fp changes
+PASS should stop when fp same
+PASS should stop at max pages
+PASS should not advance without next click
+PASS should advance when after fp empty
+PASS answersOnly off mid-walk
+PASS answersOnly on final
+PASS refill when zero filled
+PASS no refill when coverage ok
+PASS no refill at max attempts
+PASS merge by label
+PASS fingerprint null safe
+PASS pick skips answered label
+
+All 35 autofill-engine checks passed.
+PASS base limit
+PASS stable missing labels
+PASS stable missing drops dupes
+PASS normalize incomplete
+PASS normalize missing labels
+PASS normalize complete
+PASS isFillIncomplete true
+PASS canAutoSubmit blocks incomplete
+PASS canAutoSubmit allows complete
+PASS canAutoSubmit respects prefs off
+PASS resume missing overrides complete
+PASS resume missing listed
+PASS canAutoSubmit blocks empty resume
+PASS isFillIncomplete empty resume
+PASS resume uploaded allows submit
+PASS visible required errors block submit
+PASS workday budget > base
+PASS page bump capped
+PASS form wait workday longer
+PASS poll plan attempts
+PASS prioritize required first
+PASS prioritize essays last
+
+All 22 fill-verify checks passed.
+PASS formWaitMs ≤ 15s
+PASS formWaitMs ≥ 8s
+PASS openGapMs ≤ 8s
+PASS maxTabs ≥ 1
+PASS per-page retries ≤ 2
+PASS bid hard limit ≤ 2m
+PASS bid hard limit ≥ 60s
+PASS filter drops Loading
+PASS filter drops Searching
+PASS keep waiting while loading
+PASS keep waiting empty not loading
+PASS stop when options ready
+PASS stop on timeout even loading
+PASS human flow includes wait
+PASS no wait when complete
+PASS wait when incomplete loading
+PASS wait when incomplete empty
+PASS no wait when options ready to pick
+PASS verify rejects Select...
+PASS verify accepts CS
+PASS verify soft CS/Computing
+PASS verify rejects empty
+PASS type before wait for typeahead
+PASS no pre-wait before input
+
+All 17 select-wait-loading checks passed.
+[paths] DATA_ROOT = C:\Vincent\Projects\01. Lumi-Auto-Bid-System\Lumi-Auto-Bid-System\database
+[paths] DB_PATH   = C:\Vincent\Projects\01. Lumi-Auto-Bid-System\Lumi-Auto-Bid-System\database\database.sqlite
+Default logins: vincent/123456 · admin/admin123 · bob/bob123 · henry/mgr123
+PASS engine version
+FAIL cv qa ok when keywords present
+PASS cv qa fails short+missing file
+PASS extras has rules
+PASS keywords extracted
+PASS field attempt logged

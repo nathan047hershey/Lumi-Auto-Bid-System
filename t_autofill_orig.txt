@@ -1,0 +1,432 @@
+
+> job-apply-master@1.0.0 test:autofill
+> node extension/fixtures/test_ats_classify_unit.js && node extension/fixtures/test_education_fixed.js && node extension/fixtures/test_latent_bugs.js && node extension/fixtures/test_multi_ats.js && node extension/fixtures/test_ats_detailed.js && node extension/fixtures/test_all_platforms_all_types.js && node extension/fixtures/test_autofill_hard_cases.js && node extension/fixtures/test_more_platforms.js
+
+OK gh host
+OK rippling host
+OK lever host
+OK ashby host
+OK workday host
+OK sr host
+OK ashby before workday attr
+OK random automation-id not workday
+OK wd firstName autoId
+OK wd lastName autoId
+OK wd work auth label
+OK lever full name
+OK ashby sponsor
+OK gh portfolio
+OK city reside
+OK us reside yesno
+OK yoe
+OK relocate
+OK host first workday
+OK visa sponsor full
+OK desired salary
+OK nda acknowledge
+OK ai note consent
+{
+  "failed": 0,
+  "total": 23
+}
+OK school 
+OK discipline 
+OK degree 
+OK yoe18 
+OK github label 
+OK reside 
+OK state work 
+OK legal entity state 
+OK remote yesno 
+OK country 
+OK not state picker 
+OK school label 
+OK yoe q 
+OK reject Select... label 
+OK clean Discipline Select 
+OK discipline from cleaned 
+OK Select... not discipline 
+OK Select... is question trap 
+{
+  "edu": {
+    "school": "Virginia Tech",
+    "degree": "B.S. Honors degrees",
+    "discipline": "Computer Science"
+  },
+  "yoe": "10+ years",
+  "failed": 0
+}
+PASS fieldKey stable
+PASS fieldKey distinct
+PASS fieldKey no random
+PASS over_18 US default
+PASS over_18 keeps Yes
+PASS over_18 keeps No
+PASS over_18 non-US empty
+
+All 7 latent-bug checks passed.
+OK lever filled=11
+OK ashby filled=11
+OK workday filled=10
+OK smartrecruiters filled=8
+OK oracle filled=9
+{
+  "failed": 0,
+  "results": [
+    {
+      "name": "lever",
+      "ok": true,
+      "failures": [],
+      "ats": "lever",
+      "kinds": [
+        "full_name",
+        "email",
+        "phone",
+        "question",
+        "linkedin",
+        "github",
+        "city",
+        "work_authorization",
+        "requires_sponsorship",
+        "salary",
+        "years_of_experience"
+      ],
+      "filled": 11,
+      "dom": {
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "workauth": "Yes",
+        "sponsor": "No",
+        "yoe": "10p",
+        "github": "https://github.com/example",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "ashby",
+      "ok": true,
+      "failures": [],
+      "ats": "ashby",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "linkedin",
+        "github",
+        "work_authorization",
+        "requires_sponsorship",
+        "salary",
+        "years_of_experience"
+      ],
+      "filled": 11,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "auth": "Yes",
+        "sponsor": "No",
+        "yoe": "10+",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "workday",
+      "ok": true,
+      "failures": [],
+      "ats": "workday",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "work_authorization",
+        "requires_sponsorship",
+        "linkedin",
+        "github"
+      ],
+      "filled": 10,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "country": "US",
+        "auth": "Yes",
+        "sponsor": "No",
+        "city": "Palo Alto, CA",
+        "web": "https://github.com/example"
+      }
+    },
+    {
+      "name": "smartrecruiters",
+      "ok": true,
+      "failures": [],
+      "ats": "smartrecruiters",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "linkedin",
+        "work_authorization"
+      ],
+      "filled": 8,
+      "dom": {
+        "first": "Alex",
+        "email": "alex.testuser@example.com",
+        "country": "US",
+        "auth": "Yes",
+        "city": "Palo Alto, CA"
+      }
+    },
+    {
+      "name": "oracle",
+      "ok": true,
+      "failures": [],
+      "ats": "oracle",
+      "kinds": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "linkedin",
+        "work_authorization",
+        "requires_sponsorship"
+      ],
+      "filled": 9,
+      "dom": {
+        "first": "Alex",
+        "last": "Testuser",
+        "email": "alex.testuser@example.com",
+        "phone": "5550109999",
+        "city": "Palo Alto, CA",
+        "country": "US",
+        "auth": "Yes",
+        "sponsor": "No",
+        "li": "https://www.linkedin.com/in/alex-testuser"
+      }
+    }
+  ]
+}
+
+======== PASS lever (ats=lever, filled=11) ========
+Fields:
+  [full_name] Full name *
+  [email] Email *
+  [phone] Phone *
+  [question] Current company
+  [linkedin] LinkedIn URL
+  [github] GitHub URL
+  [city] Location (City) *
+  [work_authorization] Are you legally authorized to work in the United States? *
+  [requires_sponsorship] Will you now or in the future require sponsorship? *
+  [salary] What is your desired salary? *
+  [years_of_experience] How many years of professional experience do you have? *
+DOM: {
+  "name": "Alex Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "5550109999",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "github": "https://github.com/example-user",
+  "city": "Palo Alto, CA",
+  "workauth": "Yes",
+  "sponsor": "No",
+  "yoe": "10p",
+  "salary": "$79,000"
+}
+
+======== PASS ashby (ats=ashby, filled=11) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [phone] Phone Number *
+  [city] City *
+  [linkedin] LinkedIn Profile
+  [github] GitHub / Portfolio URL
+  [work_authorization] Are you authorized to work in the United States? *
+  [requires_sponsorship] Do you require visa sponsorship? *
+  [salary] Desired salary *
+  [years_of_experience] Years of experience as a software engineer *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "5550109999",
+  "city": "Palo Alto, CA",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "github": "https://github.com/example-user",
+  "auth": "Yes",
+  "sponsor": "No",
+  "yoe": "10+",
+  "salary": "$79,000"
+}
+
+======== PASS workday (ats=workday, filled=10) ========
+Fields:
+  [first_name] First Name
+  [last_name] Last Name
+  [email] Email Address
+  [phone] Phone Number
+  [city] City
+  [country] Country
+  [work_authorization] Are you legally authorized to work in the country where this job is lo
+  [requires_sponsorship] Will you now or in the future require sponsorship for employment visa 
+  [linkedin] LinkedIn
+  [github] Website / Portfolio / GitHub
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "5550109999",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "auth": "Yes",
+  "sponsor": "No",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "web": "https://github.com/example-user"
+}
+
+======== PASS smartrecruiters (ats=smartrecruiters, filled=8) ========
+Fields:
+  [first_name] First name *
+  [last_name] Last name *
+  [email] Email *
+  [phone] Phone *
+  [city] City *
+  [country] Country *
+  [linkedin] LinkedIn profile
+  [work_authorization] Are you eligible to work in this country? *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "5550109999",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "linkedin": "https://www.linkedin.com/in/alex-testuser",
+  "auth": "Yes"
+}
+
+======== PASS oracle (ats=oracle, filled=9) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [phone] Phone *
+  [city] City *
+  [country] Country *
+  [linkedin] LinkedIn Profile
+  [work_authorization] Are you legally authorized to work in the United States? *
+  [requires_sponsorship] Will you now or in the future require sponsorship? *
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "phone": "5550109999",
+  "city": "Palo Alto, CA",
+  "country": "US",
+  "li": "https://www.linkedin.com/in/alex-testuser",
+  "auth": "Yes",
+  "sponsor": "No"
+}
+
+======== FAIL greenhouse_detailed (ats=greenhouse, filled=14) ========
+Fields:
+  [first_name] First Name *
+  [last_name] Last Name *
+  [email] Email *
+  [country] Country * [combobox]
+  [school] School [combobox]
+  [degree] Degree [combobox]
+  [discipline] Discipline [combobox]
+  [city] Where do you currently reside? * [combobox]
+  [work_authorization] Are you able to work remotely and maintain a work environment that is  [combobox]
+  [work_authorization] If you reside in a US state where we have a legal entity, will you con [combobox]
+  [github] Please provide a URL to your GitHub, public portfolio. *
+  [question] Have you ever worked at CIAT? * [combobox]
+  [salary] What is your desired salary? *
+  [years_of_experience] How many years of professional experience do you have as a full stack 
+Kind failures:
+  - kind "Have you ever worked at CIAT? *" → question (want previous_employer_no)
+Value failures:
+  - ciat: got "Yes" want /^No$/i
+DOM: {
+  "first": "Alex",
+  "last": "Testuser",
+  "email": "alex.testuser@example.com",
+  "country": "United States",
+  "school": "Virginia Tech",
+  "degree": "Bachelor's Degree",
+  "discipline": "Computer Science",
+  "reside": "Somewhere else",
+  "remote": "Yes",
+  "stwork": "Yes",
+  "yoe": "10p",
+  "github": "https://github.com/example-user",
+  "ciat": "Yes",
+  "salary": "$79,000"
+}
+
+Wrote C:\Vincent\Projects\01. Lumi-Auto-Bid-System\Lumi-Auto-Bid-System\extension\fixtures\ats_detailed_report.json
+{
+  "passed": 5,
+  "failed": 1,
+  "platforms": [
+    {
+      "name": "lever",
+      "ok": true,
+      "ats": "lever",
+      "filled": 11,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "ashby",
+      "ok": true,
+      "ats": "ashby",
+      "filled": 11,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "workday",
+      "ok": true,
+      "ats": "workday",
+      "filled": 10,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "smartrecruiters",
+      "ok": true,
+      "ats": "smartrecruiters",
+      "filled": 8,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "oracle",
+      "ok": true,
+      "ats": "oracle",
+      "filled": 9,
+      "kinds": 0,
+      "values": 0
+    },
+    {
+      "name": "greenhouse_detailed",
+      "ok": false,
+      "ats": "greenhouse",
+      "filled": 14,
+      "kinds": 1,
+      "values": 1
+    }
+  ]
+}
